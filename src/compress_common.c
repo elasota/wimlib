@@ -156,7 +156,7 @@ sort_symbols(unsigned num_syms, const u32 freqs[], u8 lens[], u32 symout[])
 
 	/* Count the frequencies. */
 	for (sym = 0; sym < num_syms; sym++)
-		counters[MIN(freqs[sym], num_counters - 1)]++;
+		counters[min_unsigned(freqs[sym], num_counters - 1)]++;
 
 	/*
 	 * Make the counters cumulative, ignoring the zero-th, which counted
@@ -179,7 +179,7 @@ sort_symbols(unsigned num_syms, const u32 freqs[], u8 lens[], u32 symout[])
 		u32 freq = freqs[sym];
 
 		if (freq != 0) {
-			symout[counters[MIN(freq, num_counters - 1)]++] =
+			symout[counters[min_unsigned(freq, num_counters - 1)]++] =
 				sym | (freq << NUM_SYMBOL_BITS);
 		} else {
 			lens[sym] = 0;

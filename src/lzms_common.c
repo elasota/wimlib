@@ -379,7 +379,7 @@ lzms_dilute_symbol_frequencies(u32 freqs[], unsigned num_syms)
 
 
 #ifdef __x86_64__
-static forceinline u8 *
+static attrib_forceinline u8 *
 find_next_opcode_sse4_2(u8 *p)
 {
 	const __v16qi potential_opcodes = (__v16qi) {0x48, 0x4C, 0xE8, 0xE9, 0xF0, 0xFF};
@@ -405,7 +405,7 @@ find_next_opcode_sse4_2(u8 *p)
 }
 #endif /* __x86_64__ */
 
-static forceinline u8 *
+static attrib_forceinline u8 *
 find_next_opcode_default(u8 *p)
 {
 	/*
@@ -437,7 +437,7 @@ find_next_opcode_default(u8 *p)
 	return p;
 }
 
-static forceinline u8 *
+static attrib_forceinline u8 *
 translate_if_needed(u8 *data, u8 *p, s32 *last_x86_pos,
 		    s32 last_target_usages[], bool undo)
 {

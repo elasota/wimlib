@@ -79,7 +79,7 @@ lzx_get_window_order(size_t max_bufsize)
 	if (max_bufsize == 0 || max_bufsize > LZX_MAX_WINDOW_SIZE)
 		return 0;
 
-	return max(ilog2_ceil(max_bufsize), LZX_MIN_WINDOW_ORDER);
+	return max_unsigned(ilog2_ceil(max_bufsize), LZX_MIN_WINDOW_ORDER);
 }
 
 /* Given a valid LZX window order, return the number of symbols that will exist
@@ -95,7 +95,7 @@ lzx_get_num_main_syms(unsigned window_order)
 	u32 window_size = (u32)1 << window_order;
 	u32 max_offset = window_size - LZX_MIN_MATCH_LEN - 1;
 	unsigned num_offset_slots = 30;
-	while (max_offset >= lzx_offset_slot_base[num_offset_slots])
+	while (max_offset >= (u32)lzx_offset_slot_base[num_offset_slots])
 		num_offset_slots++;
 
 	return LZX_NUM_CHARS + (num_offset_slots * LZX_NUM_LEN_HEADERS);

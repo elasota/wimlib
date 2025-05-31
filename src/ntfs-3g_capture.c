@@ -462,7 +462,7 @@ out_put_actx:
 	return ret;
 }
 
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 load_object_id(ntfs_inode *ni, struct wim_inode *inode)
 {
 	OBJECT_ID_ATTR attr;
@@ -480,7 +480,7 @@ load_object_id(ntfs_inode *ni, struct wim_inode *inode)
 
 /* Load the security descriptor of an NTFS inode into the corresponding WIM
  * inode and the WIM image's security descriptor set.  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 get_security_descriptor(ntfs_inode *ni, struct wim_inode *inode,
 			ntfs_volume *vol, struct wim_sd_set *sd_set)
 {

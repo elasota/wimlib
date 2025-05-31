@@ -193,7 +193,7 @@ detect_sparse_region(const void *data, size_t size, size_t *len_ret)
 	bool zeroes = false;
 
 	while (p != end) {
-		size_t n = min(end - p, SPARSE_UNIT);
+		size_t n = min_unsigned(end - p, SPARSE_UNIT);
 		bool z = is_all_zeroes(p, n);
 
 		if (len != 0 && z != zeroes)

@@ -487,7 +487,7 @@ set_random_unix_metadata(struct wim_inode *inode)
 	return 0;
 }
 
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 set_random_xattrs(struct wim_inode *inode)
 {
 	int num_xattrs = 1 + rand32() % 16;
@@ -712,7 +712,7 @@ generate_data(u8 *buffer, size_t size, struct generation_context *ctx)
 	}
 }
 
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 set_random_reparse_point(struct wim_inode *inode, struct generation_context *ctx)
 {
 	struct reparse_buffer_disk rpbuf;

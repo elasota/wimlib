@@ -143,7 +143,8 @@ init_wimlib_dentry(struct wimlib_dir_entry *wdentry, struct wim_dentry *dentry,
 	object_id = inode_get_object_id(inode, &object_id_len);
 	if (unlikely(object_id != NULL)) {
 		memcpy(&wdentry->object_id, object_id,
-		       min(object_id_len, sizeof(wdentry->object_id)));
+		       min_unsigned(object_id_len,
+				    sizeof(wdentry->object_id)));
 	}
 
 	strm = inode_get_unnamed_stream(inode, get_default_stream_type(inode));

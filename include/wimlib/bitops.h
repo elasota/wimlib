@@ -31,25 +31,51 @@
 #include "wimlib/compiler.h"
 #include "wimlib/types.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 /*
  * Bit Scan Reverse (BSR) - find the 0-based index (relative to the least
  * significant bit) of the *most* significant 1 bit in the input value.  The
  * input value must be nonzero!
  */
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 bsr32(u32 v)
 {
+#ifdef _MSC_VER
+	unsigned long result;
+	_BitScanReverse(&result, v);
+	return result;
+#else
 	return 31 - __builtin_clz(v);
+#endif
 }
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 bsr64(u64 v)
 {
+#ifdef _MSC_VER
+#  ifdef _M_AMD64
+	unsigned long result;
+	_BitScanReverse64(&result, v);
+	return result;
+#  else
+	unsigned long index;
+	if (_BitScanReverse(&index, v >> 32))
+		return index + 32;
+
+	_BitScanReverse(&index, v & 0xffffffffu);
+
+	return index;
+#  endif
+#else
 	return 63 - __builtin_clzll(v);
+#endif
 }
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 bsrw(machine_word_t v)
 {
 	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
@@ -65,19 +91,42 @@ bsrw(machine_word_t v)
  * input value must be nonzero!
  */
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 bsf32(u32 v)
 {
+#ifdef _MSC_VER
+	unsigned long result;
+	_BitScanForward(&result, v);
+	return result;
+#else
 	return __builtin_ctz(v);
+#endif
 }
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 bsf64(u64 v)
 {
+#ifdef _MSC_VER
+#  ifdef _M_AMD64
+	unsigned long result;
+	_BitScanForward64(&result, v);
+	return result;
+#  else
+	unsigned long index;
+	if (_BitScanForward(&index, v & 0xffffffffu))
+		return index;
+
+	if (_BitScanForward(&index, v >> 32))
+		index += 32;
+
+	return -1;
+#  endif
+#else
 	return __builtin_ctzll(v);
+#endif
 }
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 bsfw(machine_word_t v)
 {
 	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
@@ -88,7 +137,7 @@ bsfw(machine_word_t v)
 }
 
 /* Return the log base 2 of 'n', rounded up to the nearest integer. */
-static forceinline unsigned
+static attrib_forceinline unsigned
 ilog2_ceil(size_t n)
 {
         if (n <= 1)
@@ -97,7 +146,7 @@ ilog2_ceil(size_t n)
 }
 
 /* Round 'n' up to the nearest power of 2 */
-static forceinline size_t
+static attrib_forceinline size_t
 roundup_pow_of_2(size_t n)
 {
 	return (size_t)1 << ilog2_ceil(n);

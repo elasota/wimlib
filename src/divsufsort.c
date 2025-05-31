@@ -108,7 +108,7 @@ static const int lg_table[256]= {
 
 #if (SS_BLOCKSIZE == 0) || (SS_INSERTIONSORT_THRESHOLD < SS_BLOCKSIZE)
 
-static forceinline
+static attrib_forceinline
 int
 ss_ilg(int n) {
 #if SS_BLOCKSIZE == 0
@@ -151,7 +151,7 @@ static const int sqq_table[256] = {
 247, 248, 248, 249, 249, 250, 250, 251, 251, 252, 252, 253, 253, 254, 254, 255
 };
 
-static forceinline
+static attrib_forceinline
 int
 ss_isqrt(int x) {
   int y, e;
@@ -184,7 +184,7 @@ ss_isqrt(int x) {
 /*---------------------------------------------------------------------------*/
 
 /* Compares two suffixes. */
-static forceinline
+static attrib_forceinline
 int
 ss_compare(const unsigned char *T,
            const int *p1, const int *p2,
@@ -235,7 +235,7 @@ ss_insertionsort(const unsigned char *T, const int *PA,
 
 #if (SS_BLOCKSIZE == 0) || (SS_INSERTIONSORT_THRESHOLD < SS_BLOCKSIZE)
 
-static forceinline
+static attrib_forceinline
 void
 ss_fixdown(const unsigned char *Td, const int *PA,
            int *SA, int i, int size) {
@@ -277,7 +277,7 @@ ss_heapsort(const unsigned char *Td, const int *PA, int *SA, int size) {
 /*---------------------------------------------------------------------------*/
 
 /* Returns the median of three elements. */
-static forceinline
+static attrib_forceinline
 int *
 ss_median3(const unsigned char *Td, const int *PA,
            int *v1, int *v2, int *v3) {
@@ -290,7 +290,7 @@ ss_median3(const unsigned char *Td, const int *PA,
 }
 
 /* Returns the median of five elements. */
-static forceinline
+static attrib_forceinline
 int *
 ss_median5(const unsigned char *Td, const int *PA,
            int *v1, int *v2, int *v3, int *v4, int *v5) {
@@ -304,7 +304,7 @@ ss_median5(const unsigned char *Td, const int *PA,
 }
 
 /* Returns the pivot element. */
-static forceinline
+static attrib_forceinline
 int *
 ss_pivot(const unsigned char *Td, const int *PA, int *first, int *last) {
   int *middle;
@@ -332,7 +332,7 @@ ss_pivot(const unsigned char *Td, const int *PA, int *first, int *last) {
 /*---------------------------------------------------------------------------*/
 
 /* Binary partition for substrings. */
-static forceinline
+static attrib_forceinline
 int *
 ss_partition(const int *PA,
                     int *first, int *last, int depth) {
@@ -493,7 +493,7 @@ ss_mintrosort(const unsigned char *T, const int *PA,
 
 #if SS_BLOCKSIZE != 0
 
-static forceinline
+static attrib_forceinline
 void
 ss_blockswap(int *a, int *b, int n) {
   int t;
@@ -502,7 +502,7 @@ ss_blockswap(int *a, int *b, int n) {
   }
 }
 
-static forceinline
+static attrib_forceinline
 void
 ss_rotate(int *first, int *middle, int *last) {
   int *a, *b, t;
@@ -737,7 +737,7 @@ ss_swapmerge(const unsigned char *T, const int *PA,
       continue;
     }
 
-    for(m = 0, len = MIN(middle - first, last - middle), half = len >> 1;
+    for(m = 0, len = min_signed(middle - first, last - middle), half = len >> 1;
         0 < len;
         len = half, half >>= 1) {
       if(ss_compare(T, PA + GETIDX(*(middle + m + half)),
@@ -862,7 +862,7 @@ sssort(const unsigned char *T, const int *PA,
 
 /*---------------------------------------------------------------------------*/
 
-static forceinline
+static attrib_forceinline
 int
 tr_ilg(int n) {
   return (n & 0xffff0000) ?
@@ -897,7 +897,7 @@ tr_insertionsort(const int *ISAd, int *first, int *last) {
 
 /*---------------------------------------------------------------------------*/
 
-static forceinline
+static attrib_forceinline
 void
 tr_fixdown(const int *ISAd, int *SA, int i, int size) {
   int j, k;
@@ -938,7 +938,7 @@ tr_heapsort(const int *ISAd, int *SA, int size) {
 /*---------------------------------------------------------------------------*/
 
 /* Returns the median of three elements. */
-static forceinline
+static attrib_forceinline
 int *
 tr_median3(const int *ISAd, int *v1, int *v2, int *v3) {
   if(ISAd[*v1] > ISAd[*v2]) { SWAP(v1, v2); }
@@ -950,7 +950,7 @@ tr_median3(const int *ISAd, int *v1, int *v2, int *v3) {
 }
 
 /* Returns the median of five elements. */
-static forceinline
+static attrib_forceinline
 int *
 tr_median5(const int *ISAd,
            int *v1, int *v2, int *v3, int *v4, int *v5) {
@@ -964,7 +964,7 @@ tr_median5(const int *ISAd,
 }
 
 /* Returns the pivot element. */
-static forceinline
+static attrib_forceinline
 int *
 tr_pivot(const int *ISAd, int *first, int *last) {
   int *middle;
@@ -999,14 +999,14 @@ struct _trbudget_t {
   int count;
 };
 
-static forceinline
+static attrib_forceinline
 void
 trbudget_init(trbudget_t *budget, int chance, int incval) {
   budget->chance = chance;
   budget->remain = budget->incval = incval;
 }
 
-static forceinline
+static attrib_forceinline
 int
 trbudget_check(trbudget_t *budget, int size) {
   if(size <= budget->remain) { budget->remain -= size; return 1; }
@@ -1019,7 +1019,7 @@ trbudget_check(trbudget_t *budget, int size) {
 
 /*---------------------------------------------------------------------------*/
 
-static forceinline
+static attrib_forceinline
 void
 tr_partition(const int *ISAd,
              int *first, int *middle, int *last,

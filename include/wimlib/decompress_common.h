@@ -61,7 +61,7 @@ struct input_bitstream {
 };
 
 /* Initialize a bitstream to read from the specified input buffer.  */
-static forceinline void
+static attrib_forceinline void
 init_input_bitstream(struct input_bitstream *is, const void *buffer, u32 size)
 {
 	is->bitbuf = 0;
@@ -80,7 +80,7 @@ init_input_bitstream(struct input_bitstream *is, const void *buffer, u32 size)
 /* Ensure the bit buffer variable for the bitstream contains at least @num_bits
  * bits.  Following this, bitstream_peek_bits() and/or bitstream_remove_bits()
  * may be called on the bitstream to peek or remove up to @num_bits bits.  */
-static forceinline void
+static attrib_forceinline void
 bitstream_ensure_bits(struct input_bitstream *is, const unsigned num_bits)
 {
 	/* This currently works for at most 17 bits.  */
@@ -113,7 +113,7 @@ overflow:
 /* Return the next @num_bits bits from the bitstream, without removing them.
  * There must be at least @num_bits remaining in the buffer variable, from a
  * previous call to bitstream_ensure_bits().  */
-static forceinline u32
+static attrib_forceinline u32
 bitstream_peek_bits(const struct input_bitstream *is, const unsigned num_bits)
 {
 	return (is->bitbuf >> 1) >> (sizeof(is->bitbuf) * 8 - num_bits - 1);
@@ -122,7 +122,7 @@ bitstream_peek_bits(const struct input_bitstream *is, const unsigned num_bits)
 /* Remove @num_bits from the bitstream.  There must be at least @num_bits
  * remaining in the buffer variable, from a previous call to
  * bitstream_ensure_bits().  */
-static forceinline void
+static attrib_forceinline void
 bitstream_remove_bits(struct input_bitstream *is, unsigned num_bits)
 {
 	is->bitbuf <<= num_bits;
@@ -132,7 +132,7 @@ bitstream_remove_bits(struct input_bitstream *is, unsigned num_bits)
 /* Remove and return @num_bits bits from the bitstream.  There must be at least
  * @num_bits remaining in the buffer variable, from a previous call to
  * bitstream_ensure_bits().  */
-static forceinline u32
+static attrib_forceinline u32
 bitstream_pop_bits(struct input_bitstream *is, unsigned num_bits)
 {
 	u32 bits = bitstream_peek_bits(is, num_bits);
@@ -141,7 +141,7 @@ bitstream_pop_bits(struct input_bitstream *is, unsigned num_bits)
 }
 
 /* Read and return the next @num_bits bits from the bitstream.  */
-static forceinline u32
+static attrib_forceinline u32
 bitstream_read_bits(struct input_bitstream *is, unsigned num_bits)
 {
 	bitstream_ensure_bits(is, num_bits);
@@ -149,7 +149,7 @@ bitstream_read_bits(struct input_bitstream *is, unsigned num_bits)
 }
 
 /* Read and return the next literal byte embedded in the bitstream.  */
-static forceinline u8
+static attrib_forceinline u8
 bitstream_read_byte(struct input_bitstream *is)
 {
 	if (unlikely(is->end == is->next))
@@ -158,7 +158,7 @@ bitstream_read_byte(struct input_bitstream *is)
 }
 
 /* Read and return the next 16-bit integer embedded in the bitstream.  */
-static forceinline u16
+static attrib_forceinline u16
 bitstream_read_u16(struct input_bitstream *is)
 {
 	u16 v;
@@ -171,7 +171,7 @@ bitstream_read_u16(struct input_bitstream *is)
 }
 
 /* Read and return the next 32-bit integer embedded in the bitstream.  */
-static forceinline u32
+static attrib_forceinline u32
 bitstream_read_u32(struct input_bitstream *is)
 {
 	u32 v;
@@ -185,7 +185,7 @@ bitstream_read_u32(struct input_bitstream *is)
 
 /* Read into @dst_buffer an array of literal bytes embedded in the bitstream.
  * Return 0 if there were enough bytes remaining in the input, otherwise -1. */
-static forceinline int
+static attrib_forceinline int
 bitstream_read_bytes(struct input_bitstream *is, void *dst_buffer, size_t count)
 {
 	if (unlikely(is->end - is->next < count))
@@ -196,7 +196,7 @@ bitstream_read_bytes(struct input_bitstream *is, void *dst_buffer, size_t count)
 }
 
 /* Align the input bitstream on a coding-unit boundary.  */
-static forceinline void
+static attrib_forceinline void
 bitstream_align(struct input_bitstream *is)
 {
 	is->bitsleft = 0;
@@ -249,7 +249,7 @@ bitstream_align(struct input_bitstream *is)
  * XXX: This is mostly duplicated in lzms_decode_huffman_symbol() in
  * lzms_decompress.c; keep them in sync!
  */
-static forceinline unsigned
+static attrib_forceinline unsigned
 read_huffsym(struct input_bitstream *is, const u16 decode_table[],
 	     unsigned table_bits, unsigned max_codeword_len)
 {
@@ -421,13 +421,13 @@ make_huffman_decode_table(u16 decode_table[], unsigned num_syms,
 /*                             LZ match copying                               */
 /*----------------------------------------------------------------------------*/
 
-static forceinline void
+static attrib_forceinline void
 copy_word_unaligned(const void *src, void *dst)
 {
 	store_word_unaligned(load_word_unaligned(src), dst);
 }
 
-static forceinline machine_word_t
+static attrib_forceinline machine_word_t
 repeat_u16(u16 b)
 {
 	machine_word_t v = b;
@@ -438,7 +438,7 @@ repeat_u16(u16 b)
 	return v;
 }
 
-static forceinline machine_word_t
+static attrib_forceinline machine_word_t
 repeat_byte(u8 b)
 {
 	return repeat_u16(((u16)b << 8) | b);
@@ -457,7 +457,7 @@ repeat_byte(u8 b)
  * 'min_length' is a hint which specifies the minimum possible match length.
  * This should be a compile-time constant.
  */
-static forceinline int
+static attrib_forceinline int
 lz_copy(u32 length, u32 offset, u8 *out_begin, u8 *out_next, u8 *out_end,
 	u32 min_length)
 {

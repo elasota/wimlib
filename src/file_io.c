@@ -85,7 +85,8 @@ pipe_read(struct filedes *fd, void *buf, size_t count, off_t offset)
 
 	/* Manually seek to the requested position.  */
 	while (fd->offset != offset) {
-		size_t bytes_to_read = min(offset - fd->offset, BUFFER_SIZE);
+		size_t bytes_to_read = min_unsigned(offset - fd->offset,
+						    BUFFER_SIZE);
 		u8 dummy[bytes_to_read];
 
 		ret = full_read(fd, dummy, bytes_to_read);

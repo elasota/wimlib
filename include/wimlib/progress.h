@@ -47,9 +47,12 @@ set_next_progress(u64 completed_bytes, u64 total_bytes, u64 *next_progress_p)
 		 *	- OR another 5000000 bytes have been processed;
 		 *	- OR all bytes have been processed.
 		 */
-		*next_progress_p = min(min(completed_bytes + total_bytes / 128,
-					   completed_bytes + 5000000),
-				       total_bytes);
+		*next_progress_p =
+			min_unsigned(
+				min_unsigned(
+					completed_bytes + total_bytes / 128,
+					completed_bytes + 5000000),
+				total_bytes);
 	} else {
 		/* Last message has been sent.  */
 		*next_progress_p = ~0;

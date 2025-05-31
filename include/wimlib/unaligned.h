@@ -35,7 +35,7 @@
 #include "wimlib/types.h"
 
 #define DEFINE_UNALIGNED_TYPE(type)				\
-static forceinline type						\
+static attrib_forceinline type						\
 load_##type##_unaligned(const void *p)				\
 {								\
 	type v;							\
@@ -43,7 +43,7 @@ load_##type##_unaligned(const void *p)				\
 	return v;						\
 }								\
 								\
-static forceinline void						\
+static attrib_forceinline void						\
 store_##type##_unaligned(type v, void *p)			\
 {								\
 	memcpy(p, &v, sizeof(v));				\
@@ -64,7 +64,7 @@ DEFINE_UNALIGNED_TYPE(machine_word_t);
 #define load_word_unaligned	load_machine_word_t_unaligned
 #define store_word_unaligned	store_machine_word_t_unaligned
 
-static forceinline u16
+static attrib_forceinline u16
 get_unaligned_le16(const u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST)
@@ -73,7 +73,7 @@ get_unaligned_le16(const u8 *p)
 		return ((u16)p[1] << 8) | p[0];
 }
 
-static forceinline u32
+static attrib_forceinline u32
 get_unaligned_le32(const u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST)
@@ -83,7 +83,7 @@ get_unaligned_le32(const u8 *p)
 			((u32)p[1] << 8) | p[0];
 }
 
-static forceinline u32
+static attrib_forceinline u32
 get_unaligned_be32(const u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST)
@@ -93,7 +93,7 @@ get_unaligned_be32(const u8 *p)
 			((u32)p[2] << 8) | p[3];
 }
 
-static forceinline void
+static attrib_forceinline void
 put_unaligned_le16(u16 v, u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
@@ -104,7 +104,7 @@ put_unaligned_le16(u16 v, u8 *p)
 	}
 }
 
-static forceinline void
+static attrib_forceinline void
 put_unaligned_le32(u32 v, u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {
@@ -117,7 +117,7 @@ put_unaligned_le32(u32 v, u8 *p)
 	}
 }
 
-static forceinline void
+static attrib_forceinline void
 put_unaligned_be32(u32 v, u8 *p)
 {
 	if (UNALIGNED_ACCESS_IS_FAST) {

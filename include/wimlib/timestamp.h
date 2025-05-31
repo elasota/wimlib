@@ -7,7 +7,10 @@
 #ifndef _WIMLIB_TIMESTAMP_H
 #define _WIMLIB_TIMESTAMP_H
 
-#include <sys/time.h>
+#ifndef _WIN32
+#  include <sys/time.h>
+#endif
+
 #include <time.h>
 
 #include "wimlib/types.h"

@@ -146,7 +146,7 @@ struct TEMPLATED(hc_matchfinder) {
 
 /* Return the number of bytes that must be allocated for a 'hc_matchfinder' that
  * can work with buffers up to the specified size.  */
-static forceinline size_t
+static attrib_forceinline size_t
 TEMPLATED(hc_matchfinder_size)(size_t max_bufsize)
 {
 	return sizeof(struct TEMPLATED(hc_matchfinder)) +
@@ -154,7 +154,7 @@ TEMPLATED(hc_matchfinder_size)(size_t max_bufsize)
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
-static forceinline void
+static attrib_forceinline void
 TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
 {
 	memset(mf, 0, sizeof(*mf));
@@ -189,7 +189,7 @@ TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
  * Return the length of the match found, or 'best_len' if no match longer than
  * 'best_len' was found.
  */
-static forceinline u32
+static attrib_forceinline u32
 TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const mf,
 					const u8 * const in_begin,
 					const u8 * const in_next,
@@ -354,7 +354,7 @@ out:
  *	These will be used and then updated with the precomputed hashcodes for
  *	the sequence beginning at @in_next + @count.
  */
-static forceinline void
+static attrib_forceinline void
 TEMPLATED(hc_matchfinder_skip_bytes)(struct TEMPLATED(hc_matchfinder) * const mf,
 				     const u8 * const in_begin,
 				     const u8 *in_next,

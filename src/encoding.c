@@ -77,7 +77,7 @@ typedef unsigned (*decode_codepoint_fn)(const u8 *in, size_t remaining,
 /* Encode the Unicode codepoint @c and return the number of bytes used. */
 typedef unsigned (*encode_codepoint_fn)(u32 c, u8 *out);
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 utf8_decode_codepoint(const u8 *in, size_t remaining, bool validate, u32 *c_ret)
 {
 	if (likely(in[0] < 0x80)) { /* U+0...U+7F */
@@ -124,7 +124,7 @@ invalid:
 	return 1;
 }
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 utf8_encode_codepoint(u32 c, u8 *out)
 {
 	if (likely(c < 0x80)) {
@@ -152,7 +152,7 @@ utf8_encode_codepoint(u32 c, u8 *out)
 	return 4;
 }
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 utf16le_decode_codepoint(const u8 *in, size_t remaining, bool validate,
 			 u32 *c_ret)
 {
@@ -185,10 +185,10 @@ unpaired:
 
 invalid:
 	*c_ret = INVALID_CODEPOINT;
-	return min(remaining, 2);
+	return min_unsigned(remaining, 2);
 }
 
-static forceinline unsigned
+static attrib_forceinline unsigned
 utf16le_encode_codepoint(u32 c, u8 *out)
 {
 	if (likely(c < 0x10000)) {
@@ -213,7 +213,7 @@ utf16le_encode_codepoint(u32 c, u8 *out)
  * If the input string is malformed, return @ilseq_err with errno set to EILSEQ.
  * If out of memory, return WIMLIB_ERR_NOMEM with errno set to ENOMEM.
  */
-static forceinline int
+static attrib_forceinline int
 convert_string(const u8 * const in, const size_t in_nbytes,
 	       u8 **out_ret, size_t *out_nbytes_ret,
 	       int ilseq_err,
@@ -377,7 +377,7 @@ cmp_utf16le_strings(const utf16lechar *s1, size_t n1,
 		    const utf16lechar *s2, size_t n2,
 		    bool ignore_case)
 {
-	size_t n = min(n1, n2);
+	size_t n = min_unsigned(n1, n2);
 
 	if (ignore_case) {
 		for (size_t i = 0; i < n; i++) {

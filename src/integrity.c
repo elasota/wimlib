@@ -67,7 +67,7 @@ calculate_chunk_sha1(struct filedes *in_fd, size_t this_chunk_size,
 	bytes_remaining = this_chunk_size;
 	sha1_init(&ctx);
 	do {
-		bytes_to_read = min(bytes_remaining, sizeof(buf));
+		bytes_to_read = min_unsigned(bytes_remaining, sizeof(buf));
 		ret = full_pread(in_fd, buf, bytes_to_read, offset);
 		if (ret) {
 			ERROR_WITH_ERRNO("Read error while calculating "

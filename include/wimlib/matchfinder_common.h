@@ -37,7 +37,7 @@
  * bits contain the first 3 bytes, arranged in octets in a platform-dependent
  * order, at the memory location from which the input 32-bit value was loaded.
  */
-static forceinline u32
+static attrib_forceinline u32
 loaded_u32_to_u24(u32 v)
 {
 	if (CPU_IS_LITTLE_ENDIAN())
@@ -51,7 +51,7 @@ loaded_u32_to_u24(u32 v)
  * The order in which the 3 bytes will be arranged as octets in the 24 bits is
  * platform-dependent.  At least 4 bytes (not 3) must be available at @p.
  */
-static forceinline u32
+static attrib_forceinline u32
 load_u24_unaligned(const u8 *p)
 {
 #if UNALIGNED_ACCESS_IS_FAST
@@ -71,7 +71,7 @@ load_u24_unaligned(const u8 *p)
  * next-highest @num_bits bits of the product as the hash value, as those have
  * the most randomness.
  */
-static forceinline u32
+static attrib_forceinline u32
 lz_hash(u32 seq, unsigned num_bits)
 {
 	return (u32)(seq * 0x1E35A7BD) >> (32 - num_bits);
@@ -81,7 +81,7 @@ lz_hash(u32 seq, unsigned num_bits)
  * Return the number of bytes at @matchptr that match the bytes at @strptr, up
  * to a maximum of @max_len.  Initially, @start_len bytes are matched.
  */
-static forceinline unsigned
+static attrib_forceinline unsigned
 lz_extend(const u8 * const strptr, const u8 * const matchptr,
 	  const unsigned start_len, const unsigned max_len)
 {

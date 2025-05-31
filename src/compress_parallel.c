@@ -382,8 +382,8 @@ new_parallel_chunk_compressor(int out_ctype, u32 out_chunk_size,
 		 * are lots of threads and/or the chunks are very small.  */
 		chunks_per_msg = 2;
 		chunks_per_msg += num_threads * (65536 / out_chunk_size) / 16;
-		chunks_per_msg = max(chunks_per_msg, 2);
-		chunks_per_msg = min(chunks_per_msg, MAX_CHUNKS_PER_MSG);
+		chunks_per_msg = max_unsigned(chunks_per_msg, 2);
+		chunks_per_msg = min_unsigned(chunks_per_msg, MAX_CHUNKS_PER_MSG);
 		msgs_per_thread = 2;
 	} else {
 		/* Big chunks: Just have one buffer per thread --- more would

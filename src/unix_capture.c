@@ -223,7 +223,7 @@ out:
  * If the file at @path has Linux-style extended attributes, read them into
  * memory and add them to @inode as a tagged item.
  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 scan_linux_xattrs(const char *path, struct wim_inode *inode)
 {
 	char _names[256];
@@ -461,7 +461,7 @@ unix_relativize_link_target(char *target, u64 ino, u64 dev)
 	return target;
 }
 
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 unix_scan_symlink(int dirfd, const char *relpath,
 		  struct wim_inode *inode, struct scan_params *params)
 {

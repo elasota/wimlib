@@ -30,6 +30,19 @@
 #ifndef _WIMLIB_COMPILER_H
 #define _WIMLIB_COMPILER_H
 
+#ifdef _MSC_VER
+#include <stdint.h>
+#endif
+
+#ifndef __ORDER_LITTLE_ENDIAN__
+#define __ORDER_LITTLE_ENDIAN__ 1
+#endif
+
+#ifndef __ORDER_BIG_ENDIAN__
+#define __ORDER_BIG_ENDIAN__ 2
+#endif
+
+
 /* Is the compiler GCC of the specified version or later?  This always returns
  * false for clang, since clang is "frozen" at GNUC 4.2.  The __has_*
  * feature-test macros should be used to detect clang functionality instead.  */
@@ -51,27 +64,65 @@
 
 /* Declare that the annotated function should always be inlined.  This might be
  * desirable in highly tuned code, e.g. compression codecs.  */
-#define forceinline		inline __attribute__((always_inline))
+#ifdef _MSC_VER
+#define attrib_forceinline	__forceinline
+#else
+#define attrib_forceinline	inline __attribute__((always_inline))
+#endif
 
 /* Declare that the annotated function should *not* be inlined.  */
-#define noinline		__attribute__((noinline))
+#ifdef _MSC_VER
+#define attrib_noinline		__declspec(noinline)
+#else
+#define attrib_noinline		__attribute__((noinline))
+#endif
 
-/* Functionally the same as 'noinline', but documents that the reason for not
- * inlining is to prevent the annotated function from being inlined into a
- * recursive function, thereby increasing its stack usage.  */
-#define noinline_for_stack	noinline
+/* Declare that the annotated function is unlikely to be executed */
+#ifdef _MSC_VER
+#define attrib_cold
+#else
+#define attrib_cold __attribute__((cold))
+#endif
+
+/* Declare that the annotated type or variable is aligned */
+#ifdef _MSC_VER
+#define attrib_aligned(alignment)	__declspec(align(alignment))
+#else
+#define attrib_aligned(alignment)	__attribute__((aligned(alignment)))
+#endif
+
+/* Functionally the same as 'attrib_noinline', but documents that the reason
+ * for not inlining is to prevent the annotated function from being inlined
+ * into a recursive function, thereby increasing its stack usage.  */
+#define attrib_noinline_for_stack attrib_noinline
 
 /* Hint that the expression is usually true.  */
+#ifdef _MSC_VER
+#define likely(expr)		(expr)
+#else
 #define likely(expr)		__builtin_expect(!!(expr), 1)
+#endif
 
 /* Hint that the expression is usually false.  */
+#ifdef _MSC_VER
+#define unlikely(expr)		(expr)
+#else
 #define unlikely(expr)		__builtin_expect(!!(expr), 0)
+#endif
 
 /* Prefetch into L1 cache for read.  */
+#ifdef _MSC_VER
+#define prefetchr(addr)		_mm_prefetch((const char *)(addr), _MM_HINT_T0)
+#else
 #define prefetchr(addr)		__builtin_prefetch((addr), 0)
+#endif
 
 /* Prefetch into L1 cache for write.  */
+#ifdef _MSC_VER
+#define prefetchw(addr)		_mm_prefetch((const char *)(addr), _MM_HINT_T0)
+#else
 #define prefetchw(addr)		__builtin_prefetch((addr), 1)
+#endif
 
 /* Hint that the annotated function takes a printf()-like format string and
  * arguments.  This is currently disabled on Windows because MinGW does not
@@ -109,26 +160,67 @@
 #endif
 
 /* Get the minimum of two variables, without multiple evaluation.  */
-#undef min
-#define min(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
-		    (_a < _b) ? _a : _b; })
-#undef MIN
-#define MIN(a, b)	min((a), (b))
+static attrib_forceinline double
+min_float(double a, double b)
+{
+	return (a < b) ? a : b;
+}
+
+static attrib_forceinline uintmax_t
+min_unsigned(uintmax_t a, uintmax_t b)
+{
+	return (a < b) ? a : b;
+}
+
+static attrib_forceinline intmax_t
+min_signed(intmax_t a, intmax_t b)
+{
+	return (a < b) ? a : b;
+}
+
+static attrib_forceinline void *
+min_ptr(void *a, void *b)
+{
+	return (a < b) ? a : b;
+}
 
 /* Get the maximum of two variables, without multiple evaluation.  */
-#undef max
-#define max(a, b)  ({ typeof(a) _a = (a); typeof(b) _b = (b); \
-		    (_a > _b) ? _a : _b; })
-#undef MAX
-#define MAX(a, b)	max((a), (b))
+static attrib_forceinline double
+max_float(double a, double b)
+{
+	return (a > b) ? a : b;
+}
+
+static attrib_forceinline uintmax_t
+max_unsigned(uintmax_t a, uintmax_t b)
+{
+	return (a > b) ? a : b;
+}
+
+static attrib_forceinline intmax_t
+max_signed(intmax_t a, intmax_t b)
+{
+	return (a > b) ? a : b;
+}
+
+static attrib_forceinline void *
+max_ptr(void *a, void *b)
+{
+	return (a > b) ? a : b;
+}
 
 /* Get the maximum of three variables, without multiple evaluation.  */
-#undef max3
-#define max3(a, b, c)	max(max((a), (b)), (c))
+#define max3_signed(a, b, c)	max_signed(max_signed((a), (b)), (c))
+#define max3_unsigned(a, b, c)	max_unsigned(max_unsigned((a), (b)), (c))
+#define max3_float(a, b, c)	max_float(max_float((a), (b)), (c))
 
 /* Swap the values of two variables, without multiple evaluation.  */
 #ifndef swap
-#  define swap(a, b) ({ typeof(a) _a = (a); (a) = (b); (b) = _a; })
+#  ifdef _MSC_VER
+#    define swap(a, b) do { typeof(a) _a = (a); (a) = (b); (b) = _a; } while(0)
+#  else
+#    define swap(a, b) ({ typeof(a) _a = (a); (a) = (b); (b) = _a; })
+#  endif
 #endif
 #define SWAP(a, b)	swap((a), (b))
 
@@ -158,5 +250,11 @@
 
 /* CONCAT() - concatenate two tokens at preprocessing time.  */
 #define CONCAT(s1, s2)		CONCAT_IMPL(s1, s2)
+
+#ifdef _MSC_VER
+#define __builtin_constant_p(n) (0)
+
+typedef ptrdiff_t ssize_t;
+#endif
 
 #endif /* _WIMLIB_COMPILER_H */

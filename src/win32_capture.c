@@ -504,7 +504,7 @@ read_windows_file_prefix(const struct blob_descriptor *blob, u64 size,
 /*
  * Load the short name of a file into a WIM dentry.
  */
-static noinline_for_stack NTSTATUS
+static attrib_noinline_for_stack NTSTATUS
 winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
 {
 	/* It's not any harder to just make the NtQueryInformationFile() system
@@ -532,7 +532,7 @@ winnt_get_short_name(HANDLE h, struct wim_dentry *dentry)
  * Load the security descriptor of a file into the corresponding inode and the
  * WIM image's security descriptor set.
  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 winnt_load_security_descriptor(HANDLE h, struct wim_inode *inode,
 			       struct winnt_scan_ctx *ctx)
 {
@@ -658,7 +658,7 @@ out:
 }
 
 /* Load a file's object ID into the corresponding WIM inode.  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 winnt_load_object_id(HANDLE h, struct wim_inode *inode,
 		     struct winnt_scan_ctx *ctx)
 {
@@ -699,7 +699,7 @@ winnt_load_object_id(HANDLE h, struct wim_inode *inode,
 }
 
 /* Load a file's extended attributes into the corresponding WIM inode.  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 winnt_load_xattrs(HANDLE h, struct wim_inode *inode,
 		  struct winnt_scan_ctx *ctx, u32 ea_size)
 {
@@ -1115,7 +1115,7 @@ winnt_try_rpfix(struct reparse_buffer_disk *rpbuf, u16 *rpbuflen_p,
  * reparse point is a symbolic link or junction with an absolute target and
  * RPFIX mode is enabled, then also rewrite its target to be relative to the
  * capture root.  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 winnt_load_reparse_data(HANDLE h, struct wim_inode *inode,
 			struct winnt_scan_ctx *ctx)
 {
@@ -1326,7 +1326,7 @@ winnt_scan_data_stream(wchar_t *raw_stream_name, size_t raw_stream_name_nchars,
  * FILE_FLAG_BACKUP_SEMANTICS.  This causing access denied errors on certain
  * files, even when running as the Administrator.
  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 winnt_scan_data_streams(HANDLE h, struct wim_inode *inode, u64 file_size,
 			struct winnt_scan_ctx *ctx)
 {
@@ -1441,7 +1441,7 @@ extract_starting_lcn(const RETRIEVAL_POINTERS_BUFFER *extents)
 	return extents->Extents[0].Lcn.QuadPart;
 }
 
-static noinline_for_stack u64
+static attrib_noinline_for_stack u64
 get_sort_key(HANDLE h)
 {
 	STARTING_VCN_INPUT_BUFFER in = { .StartingVcn.QuadPart = 0 };
@@ -1499,7 +1499,7 @@ should_try_to_use_wimboot_hash(const struct wim_inode *inode,
  * This function returns 0 if the fixup succeeded or was intentionally not
  * executed.  Otherwise it returns an error code.
  */
-static noinline_for_stack int
+static attrib_noinline_for_stack int
 try_to_use_wimboot_hash(HANDLE h, struct wim_inode *inode,
 			struct winnt_scan_ctx *ctx)
 {
@@ -1627,7 +1627,7 @@ struct file_info {
 	u32 ea_size;
 };
 
-static noinline_for_stack NTSTATUS
+static attrib_noinline_for_stack NTSTATUS
 get_file_info(HANDLE h, struct file_info *info)
 {
 	IO_STATUS_BLOCK iosb;

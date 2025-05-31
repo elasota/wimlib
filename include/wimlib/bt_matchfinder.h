@@ -114,7 +114,7 @@ struct TEMPLATED(bt_matchfinder) {
 
 /* Return the number of bytes that must be allocated for a 'bt_matchfinder' that
  * can work with buffers up to the specified size.  */
-static forceinline size_t
+static attrib_forceinline size_t
 TEMPLATED(bt_matchfinder_size)(size_t max_bufsize)
 {
 	return sizeof(struct TEMPLATED(bt_matchfinder)) +
@@ -122,19 +122,19 @@ TEMPLATED(bt_matchfinder_size)(size_t max_bufsize)
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
-static forceinline void
+static attrib_forceinline void
 TEMPLATED(bt_matchfinder_init)(struct TEMPLATED(bt_matchfinder) *mf)
 {
 	memset(mf, 0, sizeof(*mf));
 }
 
-static forceinline mf_pos_t *
+static attrib_forceinline mf_pos_t *
 TEMPLATED(bt_left_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 {
 	return &mf->child_tab[(node << 1) + 0];
 }
 
-static forceinline mf_pos_t *
+static attrib_forceinline mf_pos_t *
 TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 {
 	return &mf->child_tab[(node << 1) + 1];
@@ -147,7 +147,7 @@ TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 
 /* Advance the binary tree matchfinder by one byte, optionally recording
  * matches.  @record_matches should be a compile-time constant.  */
-static forceinline struct lz_match *
+static attrib_forceinline struct lz_match *
 TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * const mf,
 					   const u8 * const in_begin,
 					   const ptrdiff_t cur_pos,
@@ -327,7 +327,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
  * The return value is a pointer to the next available slot in the @lz_matchptr
  * array.  (If no matches were found, this will be the same as @lz_matchptr.)
  */
-static forceinline struct lz_match *
+static attrib_forceinline struct lz_match *
 TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
 				      const u8 *in_begin,
 				      ptrdiff_t cur_pos,
@@ -356,7 +356,7 @@ TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
  * This is very similar to bt_matchfinder_get_matches() because both functions
  * must do hashing and tree re-rooting.
  */
-static forceinline void
+static attrib_forceinline void
 TEMPLATED(bt_matchfinder_skip_byte)(struct TEMPLATED(bt_matchfinder) *mf,
 				    const u8 *in_begin,
 				    ptrdiff_t cur_pos,
