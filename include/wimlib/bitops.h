@@ -80,7 +80,7 @@ bsrw(machine_word_t v)
 {
 	STATIC_ASSERT(WORDBITS == 32 || WORDBITS == 64);
 	if (WORDBITS == 32)
-		return bsr32(v);
+		return bsr32((u32)v);
 	else
 		return bsr64(v);
 }
