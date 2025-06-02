@@ -389,6 +389,12 @@ struct lzx_compressor {
 	 * compression */
 	void *in_buffer;
 
+	/* Capacity of in_buffer */
+	u32 in_buffer_capacity;
+
+	/* Number of prefix bytes currently in in_buffer */
+	u32 in_prefix_size;
+
 	/* If true, then the compressor need not preserve the input buffer if it
 	 * compresses the data successfully */
 	bool destructive;
@@ -399,6 +405,9 @@ struct lzx_compressor {
 	/* Pointer to the compress() implementation chosen at allocation time */
 	void (*impl)(struct lzx_compressor *, const u8 *, size_t,
 		     struct lzx_output_bitstream *);
+
+	/* The window size. */
+	u32 window_size;
 
 	/* The log base 2 of the window size for match offset encoding purposes.
 	 * This will be >= LZX_MIN_WINDOW_ORDER and <= LZX_MAX_WINDOW_ORDER. */
@@ -2929,6 +2938,7 @@ lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
 	if (!c)
 		goto oom0;
 
+	c->window_size = max_bufsize;
 	c->window_order = window_order;
 	c->num_main_syms = lzx_get_num_main_syms(window_order);
 	c->destructive = destructive;
@@ -2936,10 +2946,17 @@ lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
 	c->first_block = true;
 	c->e8_chunk_offset = 0;
 	c->e8_file_size = LZX_WIM_MAGIC_FILESIZE;
+	c->in_buffer_capacity = max_bufsize;
+	c->in_prefix_size = 0;
 
 	/* Allocate the buffer for preprocessed data if needed. */
 	if (!c->destructive) {
-		c->in_buffer = MALLOC(max_bufsize);
+		if (variant != LZX_COMPRESSION_VARIANT_WIM) {
+			/* Pad out to include past blocks */
+			c->in_buffer_capacity *= 2;
+		}
+
+		c->in_buffer = MALLOC(c->in_buffer_capacity);
 		if (!c->in_buffer)
 			goto oom1;
 	}
@@ -3022,8 +3039,11 @@ static int
 lzx_cab_create_compressor(size_t max_bufsize, unsigned compression_level,
 		      bool destructive, void **c_ret)
 {
-	return lzx_create_compressor_ext(max_bufsize, compression_level,
-					 destructive,
+	if (destructive) {
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+
+	return lzx_create_compressor_ext(max_bufsize, compression_level, false,
 					 LZX_COMPRESSION_VARIANT_CAB, c_ret);
 }
 
@@ -3037,6 +3057,9 @@ lzx_reset(struct lzx_compressor *c)
 
 	/* Reset the E8 preprocessor offset */
 	c->e8_chunk_offset = 0;
+
+	/* Reset the streaming prefix */
+	c->in_prefix_size = 0;
 
 	c->reset(c);
 }
@@ -3057,12 +3080,36 @@ lzx_compress_common(const void *restrict in, size_t in_nbytes,
 	if (in_nbytes < 64 && c->variant == LZX_COMPRESSION_VARIANT_WIM)
 		return 0;
 
+	/* Larger blocks than the window size are not supported. */
+	if (in_nbytes > c->window_size)
+		return 0;
+
 	/* If the compressor is in "destructive" mode, then we can directly
 	 * preprocess the input data.  Otherwise, we need to copy it into an
 	 * internal buffer first. */
 	if (!c->destructive) {
-		memcpy(c->in_buffer, in, in_nbytes);
-		in = c->in_buffer;
+		u8 * prefix_end = (u8 *)c->in_buffer;
+		
+		/* If in streaming mode, move the prefix back. */
+		if (c->variant != LZX_COMPRESSION_VARIANT_WIM) {
+			prefix_end += c->in_prefix_size;
+			u32 available =
+			    c->in_buffer_capacity - c->in_prefix_size;
+
+			if (available < in_nbytes) {
+				c->in_prefix_size =
+				    prefix_end - c->window_size;
+
+				memmove(c->in_buffer,
+					prefix_end - c->in_prefix_size,
+					c->in_prefix_size);
+
+				prefix_end = (u8 *)c->in_buffer;
+			}
+		}
+		
+		memcpy(prefix_end, in, in_nbytes);
+		in = prefix_end;
 	}
 
 	/* Preprocess the input data. */
@@ -3083,12 +3130,15 @@ lzx_compress_common(const void *restrict in, size_t in_nbytes,
 	/* If the data did not compress to less than its original size and we
 	 * preprocessed the original buffer, then postprocess it to restore it
 	 * to its original state. */
-	if (result == 0 && c->destructive && e8_preprocess_enabled)
+	if (e8_preprocess_enabled && result == 0 && c->destructive)
 		lzx_postprocess((void *)in, in_nbytes, c->e8_chunk_offset,
 				c->e8_file_size);
 
 	/* Update the E8 chunk offset. */
 	c->e8_chunk_offset += (u32)in_nbytes;
+
+	/* Update the prefix. */
+	c->in_prefix_size += (u32)in_nbytes;
 
 	/* Return the number of compressed bytes, or 0 if the input did not
 	 * compress to less than its original size. */
