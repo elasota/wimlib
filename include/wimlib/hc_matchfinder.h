@@ -147,7 +147,7 @@ struct TEMPLATED(hc_matchfinder) {
 /* Return the number of bytes that must be allocated for a 'hc_matchfinder' that
  * can work with buffers up to the specified size.  */
 static attrib_forceinline size_t
-TEMPLATED(hc_matchfinder_size)(size_t max_bufsize)
+TEMPLATED(hc_matchfinder_size)(size_t max_bufsize, bool streaming)
 {
 	return sizeof(struct TEMPLATED(hc_matchfinder)) +
 		(max_bufsize * sizeof(mf_pos_t));
@@ -388,4 +388,14 @@ TEMPLATED(hc_matchfinder_skip_bytes)(struct TEMPLATED(hc_matchfinder) * const mf
 	prefetchw(&mf->hash4_tab[hash4]);
 	next_hashes[0] = hash3;
 	next_hashes[1] = hash4;
+}
+
+/*
+ * Culls any matches that are lower than a specified offset and reduces any
+ * remaining offsets by the same amount.
+ */
+static attrib_forceinline void
+TEMPLATED(hc_matchfinder_cull)(struct TEMPLATED(hc_matchfinder) * mf,
+			       const u8 *in_begin, u32 cull_size, u32 max_len)
+{
 }

@@ -406,6 +406,9 @@ struct lzx_compressor {
 	void (*impl)(struct lzx_compressor *, const u8 *, size_t,
 		     struct lzx_output_bitstream *);
 
+	/* Pointer to the cul() implementation chosen at allocation time */
+	void (*cull)(struct lzx_compressor *, size_t);
+
 	/* The window size. */
 	u32 window_size;
 
@@ -447,6 +450,12 @@ struct lzx_compressor {
 	 * plus one for the special entry at the end. */
 	struct lzx_sequence chosen_sequences[
 		       DIV_ROUND_UP(SOFT_MAX_BLOCK_SIZE, LZX_MIN_MATCH_LEN) + 1];
+
+	/* Least-recently-used match queue */
+	u32 lru_queue[LZX_NUM_RECENT_OFFSETS];
+
+	/* Next hashes */
+	u32 next_hashes[2];
 
 	/* Tables for mapping adjusted offsets to offset slots */
 	u8 offset_slot_tab_1[32768]; /* offset slots [0, 29] */
@@ -1391,11 +1400,6 @@ struct attrib_aligned(8) lzx_lru_queue {
 #define LZX_QUEUE_R1_MASK (LZX_QUEUE_OFFSET_MASK << LZX_QUEUE_R1_SHIFT)
 #define LZX_QUEUE_R2_MASK (LZX_QUEUE_OFFSET_MASK << LZX_QUEUE_R2_SHIFT)
 
-#define LZX_QUEUE_INITIALIZER {			\
-	((u64)1 << LZX_QUEUE_R0_SHIFT) |	\
-	((u64)1 << LZX_QUEUE_R1_SHIFT) |	\
-	((u64)1 << LZX_QUEUE_R2_SHIFT) }
-
 static attrib_forceinline u64
 lzx_lru_queue_R0(struct lzx_lru_queue queue)
 {
@@ -1412,6 +1416,27 @@ static attrib_forceinline u64
 lzx_lru_queue_R2(struct lzx_lru_queue queue)
 {
 	return (queue.R >> LZX_QUEUE_R2_SHIFT) & LZX_QUEUE_OFFSET_MASK;
+}
+
+static attrib_forceinline void
+lzx_lru_queue_save(u32 * restrict out_queue,
+		   const struct lzx_lru_queue * restrict in_queue)
+{
+	struct lzx_lru_queue queue = *in_queue;
+	out_queue[0] = lzx_lru_queue_R0(queue);
+	out_queue[1] = lzx_lru_queue_R1(queue);
+	out_queue[2] = lzx_lru_queue_R2(queue);
+}
+
+static attrib_forceinline void
+lzx_lru_queue_load(struct lzx_lru_queue *restrict out_queue,
+		   const u32 *restrict in_queue)
+{
+	u64 r = 0;
+	r |= (u64)(in_queue[0]) << LZX_QUEUE_R0_SHIFT;
+	r |= (u64)(in_queue[1]) << LZX_QUEUE_R1_SHIFT;
+	r |= (u64)(in_queue[2]) << LZX_QUEUE_R2_SHIFT;
+	out_queue->R = r;
 }
 
 /* Push a match offset onto the front (most recently used) end of the queue.  */
@@ -2222,11 +2247,6 @@ lzx_optimize_and_flush_block(struct lzx_compressor * const restrict c,
 static attrib_forceinline void
 lzx_reset_near_optimal(struct lzx_compressor *c, bool is_16_bit)
 {
-	u32 max_len = LZX_MAX_MATCH_LEN;
-	u32 nice_len = min_unsigned(c->nice_match_length, max_len);
-	u32 next_hashes[2] = { 0, 0 };
-	struct lzx_lru_queue queue = LZX_QUEUE_INITIALIZER;
-
 	/* Initialize the matchfinder. */
 	CALL_BT_MF(is_16_bit, c, bt_matchfinder_init);
 }
@@ -2245,19 +2265,26 @@ lzx_reset_near_optimal_32(struct lzx_compressor *c)
 
 static attrib_forceinline void
 lzx_compress_near_optimal(struct lzx_compressor * restrict c,
-			  const u8 * const restrict in_begin, size_t in_nbytes,
+			  const u8 * restrict in_begin, size_t in_nbytes,
 			  struct lzx_output_bitstream * restrict os,
 			  bool is_16_bit)
 {
+	u32 prefix_size		 = c->in_prefix_size;
+	u32 window_size		 = c->window_size;
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end  = in_begin + in_nbytes;
 	u32 max_len = LZX_MAX_MATCH_LEN;
 	u32 nice_len = min_unsigned(c->nice_match_length, max_len);
 	u32 next_hashes[2] = {0, 0};
-	struct lzx_lru_queue queue = LZX_QUEUE_INITIALIZER;
+	struct lzx_lru_queue queue;
+	const u32 in_abs_pos = c->e8_chunk_offset - c->in_prefix_size;
 
-	/* Initialize the matchfinder. */
-	CALL_BT_MF(is_16_bit, c, bt_matchfinder_init);
+	in_begin -= c->in_prefix_size;
+
+	/* Load the LRU queue and next hashes*/
+	lzx_lru_queue_load(&queue, c->lru_queue);
+	next_hashes[0] = c->next_hashes[0];
+	next_hashes[1] = c->next_hashes[1];
 
 	do {
 		/* Starting a new block */
@@ -2295,10 +2322,14 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 				/* Search for matches at this position. */
 				struct lz_match *lz_matchptr;
 				u32 best_len;
+				size_t min_match_pos = in_next - in_begin;
+				min_match_pos -=
+				    min_unsigned(min_match_pos, window_size);
 
 				lz_matchptr = CALL_BT_MF(is_16_bit, c,
 							 bt_matchfinder_get_matches,
 							 in_begin,
+							 min_match_pos,
 							 in_next - in_begin,
 							 max_len,
 							 nice_len,
@@ -2423,6 +2454,11 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 						     in_next - in_block_begin,
 						     queue, is_16_bit);
 	} while (in_next != in_end);
+
+	/* Save the LRU queue and next hashes */
+	lzx_lru_queue_save(c->lru_queue, &queue);
+	c->next_hashes[0] = next_hashes[0];
+	c->next_hashes[1] = next_hashes[1];
 }
 
 static void
@@ -2437,6 +2473,20 @@ lzx_compress_near_optimal_32(struct lzx_compressor *c, const u8 *in,
 			     size_t in_nbytes, struct lzx_output_bitstream *os)
 {
 	lzx_compress_near_optimal(c, in, in_nbytes, os, false);
+}
+
+static void
+lzx_cull_near_optimal_16(struct lzx_compressor *c, size_t nbytes)
+{
+	CALL_BT_MF(true, c, bt_matchfinder_cull, c->in_buffer, nbytes,
+		   LZX_MAX_MATCH_LEN);
+}
+
+static void
+lzx_cull_near_optimal_32(struct lzx_compressor *c, size_t nbytes)
+{
+	CALL_BT_MF(false, c, bt_matchfinder_cull, c->in_buffer, nbytes,
+		   LZX_MAX_MATCH_LEN);
 }
 
 /******************************************************************************/
@@ -2627,11 +2677,19 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 	unsigned max_len = LZX_MAX_MATCH_LEN;
 	unsigned nice_len = min_unsigned(c->nice_match_length, max_len);
 	STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
-	u32 recent_offsets[LZX_NUM_RECENT_OFFSETS] = {1, 1, 1};
-	u32 next_hashes[2] = {0, 0};
+	u32 recent_offsets[LZX_NUM_RECENT_OFFSETS];
+	u32 next_hashes[2];
 
-	/* Initialize the matchfinder. */
-	CALL_HC_MF(is_16_bit, c, hc_matchfinder_init);
+	/* Load the LRU queue and next hashes. */
+	{
+		int i;
+		for (i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
+			recent_offsets[i] = c->lru_queue[i];
+		}
+
+		next_hashes[0] = c->next_hashes[0];
+		next_hashes[1] = c->next_hashes[1];
+	}
 
 	do {
 		/* Starting a new block */
@@ -2833,6 +2891,16 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 
 		/* Keep going until we've reached the end of the input buffer. */
 	} while (in_next != in_end);
+
+	/* Save the LRU queue and next hashes */
+	{
+		int i;
+		for (i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
+			c->lru_queue[i] = recent_offsets[i];
+		}
+		c->next_hashes[0] = next_hashes[0];
+		c->next_hashes[1] = next_hashes[1];
+	}
 }
 
 static void
@@ -2847,6 +2915,20 @@ lzx_compress_lazy_32(struct lzx_compressor *c, const u8 *in, size_t in_nbytes,
 		     struct lzx_output_bitstream *os)
 {
 	lzx_compress_lazy(c, in, in_nbytes, os, false);
+}
+
+static void
+lzx_cull_lazy_16(struct lzx_compressor *c, size_t nbytes)
+{
+	CALL_HC_MF(true, c, hc_matchfinder_cull, c->in_buffer, nbytes,
+		   LZX_MAX_MATCH_LEN);
+}
+
+static void
+lzx_cull_lazy_32(struct lzx_compressor *c, size_t nbytes)
+{
+	CALL_HC_MF(false, c, hc_matchfinder_cull, c->in_buffer, nbytes,
+		   LZX_MAX_MATCH_LEN);
 }
 
 /******************************************************************************/
@@ -2885,39 +2967,60 @@ lzx_init_offset_slot_tabs(struct lzx_compressor *c)
 }
 
 static size_t
-lzx_get_compressor_size(size_t max_bufsize, unsigned compression_level)
+lzx_get_compressor_size(size_t max_bufsize, unsigned compression_level,
+	bool streaming)
 {
 	if (compression_level <= MAX_FAST_LEVEL) {
 		if (lzx_is_16_bit(max_bufsize))
 			return offsetof(struct lzx_compressor, hc_mf_16) +
-			       hc_matchfinder_size_16(max_bufsize);
+			       hc_matchfinder_size_16(max_bufsize, streaming);
 		else
 			return offsetof(struct lzx_compressor, hc_mf_32) +
-			       hc_matchfinder_size_32(max_bufsize);
+			       hc_matchfinder_size_32(max_bufsize, streaming);
 	} else {
 		if (lzx_is_16_bit(max_bufsize))
 			return offsetof(struct lzx_compressor, bt_mf_16) +
-			       bt_matchfinder_size_16(max_bufsize);
+			       bt_matchfinder_size_16(max_bufsize, streaming);
 		else
 			return offsetof(struct lzx_compressor, bt_mf_32) +
-			       bt_matchfinder_size_32(max_bufsize);
+			       bt_matchfinder_size_32(max_bufsize, streaming);
 	}
 }
 
 /* Compute the amount of memory needed to allocate an LZX compressor. */
 static u64
-lzx_get_needed_memory(size_t max_bufsize, unsigned compression_level,
-		      bool destructive)
+lzx_get_needed_memory_common(size_t max_bufsize, unsigned compression_level,
+		      bool destructive, bool streaming)
 {
 	u64 size = 0;
 
 	if (max_bufsize > LZX_MAX_WINDOW_SIZE)
 		return 0;
 
-	size += lzx_get_compressor_size(max_bufsize, compression_level);
+	size += lzx_get_compressor_size(max_bufsize, compression_level,
+					streaming);
 	if (!destructive)
 		size += max_bufsize; /* account for in_buffer */
+
+	/* FIXME: For CAB, need to account for additional buffer */
+
 	return size;
+}
+
+static u64
+lzx_get_needed_memory(size_t max_bufsize, unsigned compression_level,
+		      bool destructive)
+{
+	return lzx_get_needed_memory_common(max_bufsize, compression_level,
+					    destructive, false);
+}
+
+static u64
+lzx_cab_get_needed_memory(size_t max_bufsize, unsigned compression_level,
+		      bool destructive)
+{
+	return lzx_get_needed_memory_common(max_bufsize, compression_level,
+					    false, true);
 }
 
 /* Allocate an LZX compressor. */
@@ -2927,6 +3030,7 @@ lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
 {
 	unsigned window_order;
 	struct lzx_compressor *c;
+	bool streaming = (variant != LZX_COMPRESSION_VARIANT_WIM);
 
 	/* Validate the maximum buffer size and get the window order from it. */
 	window_order = lzx_get_window_order(max_bufsize);
@@ -2934,7 +3038,8 @@ lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
 		return WIMLIB_ERR_INVALID_PARAM;
 
 	/* Allocate the compressor. */
-	c = MALLOC(lzx_get_compressor_size(max_bufsize, compression_level));
+	c = MALLOC(
+	    lzx_get_compressor_size(max_bufsize, compression_level, streaming));
 	if (!c)
 		goto oom0;
 
@@ -2967,9 +3072,11 @@ lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
 		if (lzx_is_16_bit(max_bufsize)) {
 			c->reset = lzx_reset_lazy_16;
 			c->impl = lzx_compress_lazy_16;
+			c->cull = lzx_cull_lazy_16;
 		} else {
 			c->reset = lzx_reset_lazy_32;
 			c->impl = lzx_compress_lazy_32;
+			c->cull = lzx_cull_lazy_32;
 		}
 
 		/* Scale max_search_depth and nice_match_length with the
@@ -2987,9 +3094,11 @@ lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
 		if (lzx_is_16_bit(max_bufsize)) {
 			c->reset = lzx_reset_near_optimal_16;
 			c->impl = lzx_compress_near_optimal_16;
+			c->cull = lzx_cull_near_optimal_16;
 		} else {
 			c->reset = lzx_reset_near_optimal_32;
 			c->impl = lzx_compress_near_optimal_32;
+			c->cull = lzx_cull_near_optimal_32;
 		}
 
 		/* Scale max_search_depth and nice_match_length with the
@@ -3061,6 +3170,18 @@ lzx_reset(struct lzx_compressor *c)
 	/* Reset the streaming prefix */
 	c->in_prefix_size = 0;
 
+	/* Reset the LRU queue */
+	{
+		int i;
+		for (i = 0; i < LZX_NUM_RECENT_OFFSETS; i++) {
+			c->lru_queue[i] = 1;
+		}
+	}
+
+	/* Reset next hashes */
+	c->next_hashes[0] = 0;
+	c->next_hashes[1] = 0;
+
 	c->reset(c);
 }
 
@@ -3097,8 +3218,9 @@ lzx_compress_common(const void *restrict in, size_t in_nbytes,
 			    c->in_buffer_capacity - c->in_prefix_size;
 
 			if (available < in_nbytes) {
-				c->in_prefix_size =
-				    prefix_end - c->window_size;
+				c->cull(c, c->in_prefix_size - c->window_size);
+
+				c->in_prefix_size = c->window_size;
 
 				memmove(c->in_buffer,
 					prefix_end - c->in_prefix_size,

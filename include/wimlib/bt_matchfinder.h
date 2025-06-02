@@ -115,10 +115,12 @@ struct TEMPLATED(bt_matchfinder) {
 /* Return the number of bytes that must be allocated for a 'bt_matchfinder' that
  * can work with buffers up to the specified size.  */
 static attrib_forceinline size_t
-TEMPLATED(bt_matchfinder_size)(size_t max_bufsize)
+TEMPLATED(bt_matchfinder_size)(size_t max_bufsize, bool streaming)
 {
+	const size_t streaming_mul = streaming ? 4 : 2;
+
 	return sizeof(struct TEMPLATED(bt_matchfinder)) +
-		(2 * max_bufsize * sizeof(mf_pos_t));
+	       (streaming_mul * max_bufsize * sizeof(mf_pos_t));
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
@@ -150,6 +152,7 @@ TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 static attrib_forceinline struct lz_match *
 TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * const mf,
 					   const u8 * const in_begin,
+					   const u32 in_min_pos,
 					   const ptrdiff_t cur_pos,
 					   const u32 max_len,
 					   const u32 nice_len,
@@ -197,7 +200,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	mf->hash2_tab[hash2] = cur_pos;
 	if (record_matches &&
 	    seq2 == load_u16_unaligned(&in_begin[cur_node]) &&
-	    likely(in_next != in_begin))
+	    likely(in_next != in_begin) &&
+	    likely(cur_node >= in_min_pos))
 	{
 		lz_matchptr->length = 2;
 		lz_matchptr->offset = in_next - &in_begin[cur_node];
@@ -213,13 +217,15 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 #endif
 	if (record_matches && likely(in_next != in_begin)) {
 		u32 seq3 = load_u24_unaligned(in_next);
-		if (seq3 == load_u24_unaligned(&in_begin[cur_node])) {
+		if (seq3 == load_u24_unaligned(&in_begin[cur_node]) &&
+			likely(cur_node >= in_min_pos)) {
 			lz_matchptr->length = 3;
 			lz_matchptr->offset = in_next - &in_begin[cur_node];
 			lz_matchptr++;
 		}
 	#if BT_MATCHFINDER_HASH3_WAYS >= 2
-		else if (seq3 == load_u24_unaligned(&in_begin[cur_node_2])) {
+		else if (seq3 == load_u24_unaligned(&in_begin[cur_node_2]) &&
+			likely(cur_node_2 >= in_min_pos)) {
 			lz_matchptr->length = 3;
 			lz_matchptr->offset = in_next - &in_begin[cur_node_2];
 			lz_matchptr++;
@@ -250,17 +256,24 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 		if (matchptr[len] == in_next[len]) {
 			len = lz_extend(in_next, matchptr, len + 1, max_len);
 			if (!record_matches || len > best_len) {
-				if (record_matches) {
-					best_len = len;
-					lz_matchptr->length = len;
-					lz_matchptr->offset = in_next - matchptr;
-					lz_matchptr++;
-				}
-				if (len >= nice_len) {
-					*pending_lt_ptr = *TEMPLATED(bt_left_child)(mf, cur_node);
-					*pending_gt_ptr = *TEMPLATED(bt_right_child)(mf, cur_node);
-					*best_len_ret = best_len;
-					return lz_matchptr;
+				if (matchptr - in_begin >= in_min_pos) {
+					if (record_matches) {
+						best_len = len;
+						lz_matchptr->length = len;
+						lz_matchptr->offset =
+						    in_next - matchptr;
+						lz_matchptr++;
+					}
+					if (len >= nice_len) {
+						*pending_lt_ptr =
+						    *TEMPLATED(bt_left_child)(
+							mf, cur_node);
+						*pending_gt_ptr =
+						    *TEMPLATED(bt_right_child)(
+							mf, cur_node);
+						*best_len_ret = best_len;
+						return lz_matchptr;
+					}
 				}
 			}
 		}
@@ -297,6 +310,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
  *	The matchfinder structure.
  * @in_begin
  *	Pointer to the beginning of the input buffer.
+ * @in_abs_pos
+ *	Absolute position of in_begin in the file
  * @cur_pos
  *	The current position in the input buffer relative to @in_begin (the
  *	position of the sequence being matched against).
@@ -330,6 +345,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 static attrib_forceinline struct lz_match *
 TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
 				      const u8 *in_begin,
+				      u32 in_min_pos,
 				      ptrdiff_t cur_pos,
 				      u32 max_len,
 				      u32 nice_len,
@@ -340,6 +356,7 @@ TEMPLATED(bt_matchfinder_get_matches)(struct TEMPLATED(bt_matchfinder) *mf,
 {
 	return TEMPLATED(bt_matchfinder_advance_one_byte)(mf,
 							  in_begin,
+							  in_min_pos,
 							  cur_pos,
 							  max_len,
 							  nice_len,
@@ -367,6 +384,7 @@ TEMPLATED(bt_matchfinder_skip_byte)(struct TEMPLATED(bt_matchfinder) *mf,
 	u32 best_len;
 	TEMPLATED(bt_matchfinder_advance_one_byte)(mf,
 						   in_begin,
+						   0,
 						   cur_pos,
 						   nice_len,
 						   nice_len,
@@ -375,4 +393,14 @@ TEMPLATED(bt_matchfinder_skip_byte)(struct TEMPLATED(bt_matchfinder) *mf,
 						   &best_len,
 						   NULL,
 						   false);
+}
+
+/*
+ * Culls any matches that are lower than a specified offset and reduces any
+ * remaining offsets by the same amount.
+ */
+static attrib_forceinline void
+TEMPLATED(bt_matchfinder_cull)(struct TEMPLATED(bt_matchfinder) * mf,
+			       const u8 *in_begin, u32 cull_size, u32 max_len)
+{
 }
