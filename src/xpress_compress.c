@@ -1175,9 +1175,17 @@ xpress_free_compressor(void *_c)
 	FREE(c);
 }
 
+static int
+xpress_set_uint_property(enum wimlib_compressor_uint_property property,
+		       size_t value, void *private)
+{
+	return WIMLIB_ERR_INVALID_PARAM;
+}
+
 const struct compressor_ops xpress_compressor_ops = {
 	.get_needed_memory  = xpress_get_needed_memory,
 	.create_compressor  = xpress_create_compressor,
 	.compress	    = xpress_compress,
 	.free_compressor    = xpress_free_compressor,
+	.set_uint_property  = xpress_set_uint_property,
 };

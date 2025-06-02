@@ -590,6 +590,23 @@ enum wimlib_compression_type {
 	 * up to and including <c>2^30</c>.
 	 */
 	WIMLIB_COMPRESSION_TYPE_LZMS = 3,
+
+	/**
+	 * LZX cabinet variant.  Do not use with WIM images.
+	 */
+	WIMLIB_COMPRESSION_TYPE_LZX_CAB = 4,
+};
+
+/**
+ * Specifies a compression property.
+ */
+enum wimlib_compressor_uint_property {
+
+	/**
+	 * For LZX CAB compression, the maximum amount of the file to apply E8
+	 * compression to.
+	 */
+	WIMLIB_COMPRESSION_LZX_PROP_UINT_E8_FILE_SIZE = 0,
 };
 
 /** @} */
@@ -4785,6 +4802,29 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 			 size_t max_block_size,
 			 unsigned int compression_level,
 			 struct wimlib_compressor **compressor_ret);
+
+
+/**
+ * Sets a property on a compressor.
+ *
+ * @param compressor
+ *	A pointer to a compressor.
+ * @param property
+ *	The type of property to set on the compressor.
+ * @param value
+ *	A pointer to the property value
+ *
+ * @return 0 on success; a ::wimlib_error_code value on failure.
+ *
+ * @retval ::WIMLIB_ERR_INVALID_COMPRESSION_TYPE
+ *	@p ctype was not a supported compression type.
+ * @retval ::WIMLIB_ERR_INVALID_PARAM
+ *	@p Parameter was invalid
+ */
+WIMLIBAPI int
+wimlib_set_compressor_uint_property(
+    struct wimlib_compressor *compressor,
+    enum wimlib_compressor_uint_property property, size_t value);
 
 /**
  * Compress a buffer of data.

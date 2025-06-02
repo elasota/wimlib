@@ -2209,7 +2209,7 @@ lzms_compress(const void *restrict in, size_t in_nbytes,
 	return result;
 }
 
-static void
+static int
 lzms_free_compressor(void *_c)
 {
 	struct lzms_compressor *c = _c;
@@ -2220,9 +2220,17 @@ lzms_free_compressor(void *_c)
 	ALIGNED_FREE(c);
 }
 
+static int
+lzms_set_uint_property(enum wimlib_compressor_uint_property property,
+		       size_t value, void *private)
+{
+	return WIMLIB_ERR_INVALID_PARAM;
+}
+
 const struct compressor_ops lzms_compressor_ops = {
 	.get_needed_memory  = lzms_get_needed_memory,
 	.create_compressor  = lzms_create_compressor,
 	.compress	    = lzms_compress,
 	.free_compressor    = lzms_free_compressor,
+	.set_uint_property  = lzms_set_uint_property,
 };

@@ -81,6 +81,14 @@
 #define ALIGNED_CODEWORD_LIMIT			7
 #define PRE_CODEWORD_LIMIT			7
 
+/*
+ * LZX compression types
+ */
+enum lzx_compression_variant {
+	LZX_COMPRESSION_VARIANT_WIM,
+	LZX_COMPRESSION_VARIANT_CAB,
+};
+
 
 /******************************************************************************/
 /*                         Block splitting parameters                         */
@@ -365,6 +373,18 @@ struct lzx_output_bitstream;
 /* The main LZX compressor structure */
 struct lzx_compressor {
 
+	/* The LZX variant to use */
+	enum lzx_compression_variant variant;
+
+	/* True if the compressor is outputting the first block */
+	bool first_block;
+
+	/* E8 preprocessor file size */
+	u32 e8_file_size;
+
+	/* E8 preprocessor chunk offset */
+	u32 e8_chunk_offset;
+
 	/* The buffer for preprocessed input data, if not using destructive
 	 * compression */
 	void *in_buffer;
@@ -372,6 +392,9 @@ struct lzx_compressor {
 	/* If true, then the compressor need not preserve the input buffer if it
 	 * compresses the data successfully */
 	bool destructive;
+
+	/* Pointer to the reset() implementation chosen at allocation time */
+	void (*reset)(struct lzx_compressor *);
 
 	/* Pointer to the compress() implementation chosen at allocation time */
 	void (*impl)(struct lzx_compressor *, const u8 *, size_t,
@@ -1079,9 +1102,22 @@ lzx_write_sequences(struct lzx_output_bitstream *os, int block_type,
 }
 
 static void
+lzx_write_header(u32 e8_file_size, struct lzx_output_bitstream *os)
+{
+	if (e8_file_size == 0) {
+		lzx_write_bits(os, 0, 1);
+	} else {
+		lzx_write_bits(os, 1, 1);
+		lzx_write_bits(os, (e8_file_size >> 16) & 0xffffu, 16);
+		lzx_write_bits(os, e8_file_size & 0xffffu, 16);
+	}
+}
+
+static void
 lzx_write_compressed_block(const u8 *block_begin,
 			   int block_type,
 			   u32 block_size,
+			   enum lzx_compression_variant variant,
 			   unsigned window_order,
 			   unsigned num_main_syms,
 			   const struct lzx_sequence sequences[],
@@ -1112,14 +1148,19 @@ lzx_write_compressed_block(const u8 *block_begin,
 	 * allocated to be capable of compressing more than 32768 bytes at once
 	 * (which also causes the number of main symbols to be increased).
 	 */
-	if (block_size == LZX_DEFAULT_BLOCK_SIZE) {
-		lzx_write_bits(os, 1, 1);
+	if (variant == LZX_COMPRESSION_VARIANT_WIM) {
+		if (block_size == LZX_DEFAULT_BLOCK_SIZE) {
+			lzx_write_bits(os, 1, 1);
+		} else {
+			lzx_write_bits(os, 0, 1);
+
+			if (window_order >= 16)
+				lzx_write_bits(os, block_size >> 16, 8);
+
+			lzx_write_bits(os, block_size & 0xFFFF, 16);
+		}
 	} else {
-		lzx_write_bits(os, 0, 1);
-
-		if (window_order >= 16)
-			lzx_write_bits(os, block_size >> 16, 8);
-
+		lzx_write_bits(os, block_size >> 16, 8);
 		lzx_write_bits(os, block_size & 0xFFFF, 16);
 	}
 
@@ -1200,9 +1241,18 @@ lzx_flush_block(struct lzx_compressor *c, struct lzx_output_bitstream *os,
 
 	block_type = lzx_choose_verbatim_or_aligned(&c->freqs,
 						    &c->codes[c->codes_index]);
+
+	if (c->variant != LZX_COMPRESSION_VARIANT_WIM) {
+		if (c->first_block) {
+			lzx_write_header(c->e8_file_size, os);
+			c->first_block = false;
+		}
+	}
+
 	lzx_write_compressed_block(block_begin,
 				   block_type,
 				   block_size,
+				   c->variant,
 				   c->window_order,
 				   c->num_main_syms,
 				   &c->chosen_sequences[seq_idx],
@@ -2161,6 +2211,30 @@ lzx_optimize_and_flush_block(struct lzx_compressor * const restrict c,
  * simpler "greedy" or "lazy" parse while still being relatively fast.
  */
 static attrib_forceinline void
+lzx_reset_near_optimal(struct lzx_compressor *c, bool is_16_bit)
+{
+	u32 max_len = LZX_MAX_MATCH_LEN;
+	u32 nice_len = min_unsigned(c->nice_match_length, max_len);
+	u32 next_hashes[2] = { 0, 0 };
+	struct lzx_lru_queue queue = LZX_QUEUE_INITIALIZER;
+
+	/* Initialize the matchfinder. */
+	CALL_BT_MF(is_16_bit, c, bt_matchfinder_init);
+}
+
+static void
+lzx_reset_near_optimal_16(struct lzx_compressor *c)
+{
+	lzx_reset_near_optimal(c, true);
+}
+
+static void
+lzx_reset_near_optimal_32(struct lzx_compressor *c)
+{
+	lzx_reset_near_optimal(c, false);
+}
+
+static attrib_forceinline void
 lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 			  const u8 * const restrict in_begin, size_t in_nbytes,
 			  struct lzx_output_bitstream * restrict os,
@@ -2518,6 +2592,23 @@ lzx_repeat_offset_match_score(unsigned rep_len, unsigned rep_idx)
  * into consideration as well as the length.
  */
 static attrib_forceinline void
+lzx_reset_lazy(struct lzx_compressor *c, bool is_16_bit)
+{
+}
+
+static void
+lzx_reset_lazy_16(struct lzx_compressor *c)
+{
+	lzx_reset_lazy(c, true);
+}
+
+static void
+lzx_reset_lazy_32(struct lzx_compressor *c)
+{
+	lzx_reset_lazy(c, false);
+}
+
+static attrib_forceinline void
 lzx_compress_lazy(struct lzx_compressor * restrict c,
 		  const u8 * const restrict in_begin, size_t in_nbytes,
 		  struct lzx_output_bitstream * restrict os, bool is_16_bit)
@@ -2822,8 +2913,8 @@ lzx_get_needed_memory(size_t max_bufsize, unsigned compression_level,
 
 /* Allocate an LZX compressor. */
 static int
-lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
-		      bool destructive, void **c_ret)
+lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
+			  bool destructive, enum lzx_compression_variant variant, void **c_ret)
 {
 	unsigned window_order;
 	struct lzx_compressor *c;
@@ -2841,6 +2932,10 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	c->window_order = window_order;
 	c->num_main_syms = lzx_get_num_main_syms(window_order);
 	c->destructive = destructive;
+	c->variant = variant;
+	c->first_block = true;
+	c->e8_chunk_offset = 0;
+	c->e8_file_size = LZX_WIM_MAGIC_FILESIZE;
 
 	/* Allocate the buffer for preprocessed data if needed. */
 	if (!c->destructive) {
@@ -2852,10 +2947,13 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	if (compression_level <= MAX_FAST_LEVEL) {
 
 		/* Fast compression: Use lazy parsing. */
-		if (lzx_is_16_bit(max_bufsize))
+		if (lzx_is_16_bit(max_bufsize)) {
+			c->reset = lzx_reset_lazy_16;
 			c->impl = lzx_compress_lazy_16;
-		else
+		} else {
+			c->reset = lzx_reset_lazy_32;
 			c->impl = lzx_compress_lazy_32;
+		}
 
 		/* Scale max_search_depth and nice_match_length with the
 		 * compression level. */
@@ -2869,10 +2967,13 @@ lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
 	} else {
 
 		/* Normal / high compression: Use near-optimal parsing. */
-		if (lzx_is_16_bit(max_bufsize))
+		if (lzx_is_16_bit(max_bufsize)) {
+			c->reset = lzx_reset_near_optimal_16;
 			c->impl = lzx_compress_near_optimal_16;
-		else
+		} else {
+			c->reset = lzx_reset_near_optimal_32;
 			c->impl = lzx_compress_near_optimal_32;
+		}
 
 		/* Scale max_search_depth and nice_match_length with the
 		 * compression level. */
@@ -2906,17 +3007,54 @@ oom0:
 	return WIMLIB_ERR_NOMEM;
 }
 
+/* Allocate an LZX compressor. */
+static int
+lzx_create_compressor(size_t max_bufsize, unsigned compression_level,
+		      bool destructive, void **c_ret)
+{
+	return lzx_create_compressor_ext(max_bufsize, compression_level,
+					 destructive,
+					 LZX_COMPRESSION_VARIANT_WIM, c_ret);
+}
+
+/* Allocate a cabinet LZX compressor. */
+static int
+lzx_cab_create_compressor(size_t max_bufsize, unsigned compression_level,
+		      bool destructive, void **c_ret)
+{
+	return lzx_create_compressor_ext(max_bufsize, compression_level,
+					 destructive,
+					 LZX_COMPRESSION_VARIANT_CAB, c_ret);
+}
+
+/* Compress a buffer of data. */
+static void
+lzx_reset(struct lzx_compressor *c)
+{
+	/* Initially, the previous Huffman codeword lengths are all zeroes. */
+	c->codes_index = 0;
+	memset(&c->codes[1].lens, 0, sizeof(struct lzx_lens));
+
+	/* Reset the E8 preprocessor offset */
+	c->e8_chunk_offset = 0;
+
+	c->reset(c);
+}
+
 /* Compress a buffer of data. */
 static size_t
-lzx_compress(const void *restrict in, size_t in_nbytes,
-	     void *restrict out, size_t out_nbytes_avail, void *restrict _c)
+lzx_compress_common(const void *restrict in, size_t in_nbytes,
+		    void *restrict out, size_t out_nbytes_avail,
+		    struct lzx_compressor *c)
 {
-	struct lzx_compressor *c = _c;
 	struct lzx_output_bitstream os;
 	size_t result;
+	bool e8_preprocess_enabled =
+	    (c->variant == LZX_COMPRESSION_VARIANT_WIM ||
+	     c->e8_chunk_offset < 0x40000000);
 
 	/* Don't bother trying to compress very small inputs. */
-	if (in_nbytes < 64)
+	if (in_nbytes < 64 && c->variant == LZX_COMPRESSION_VARIANT_WIM)
 		return 0;
 
 	/* If the compressor is in "destructive" mode, then we can directly
@@ -2928,11 +3066,10 @@ lzx_compress(const void *restrict in, size_t in_nbytes,
 	}
 
 	/* Preprocess the input data. */
-	lzx_preprocess((void *)in, in_nbytes);
-
-	/* Initially, the previous Huffman codeword lengths are all zeroes. */
-	c->codes_index = 0;
-	memset(&c->codes[1].lens, 0, sizeof(struct lzx_lens));
+	if (e8_preprocess_enabled) {
+		lzx_preprocess((void *)in, in_nbytes, c->e8_chunk_offset,
+			       c->e8_file_size);
+	}
 
 	/* Initialize the output bitstream. */
 	lzx_init_output(&os, out, out_nbytes_avail);
@@ -2946,12 +3083,40 @@ lzx_compress(const void *restrict in, size_t in_nbytes,
 	/* If the data did not compress to less than its original size and we
 	 * preprocessed the original buffer, then postprocess it to restore it
 	 * to its original state. */
-	if (result == 0 && c->destructive)
-		lzx_postprocess((void *)in, in_nbytes);
+	if (result == 0 && c->destructive && e8_preprocess_enabled)
+		lzx_postprocess((void *)in, in_nbytes, c->e8_chunk_offset,
+				c->e8_file_size);
+
+	/* Update the E8 chunk offset. */
+	c->e8_chunk_offset += (u32)in_nbytes;
 
 	/* Return the number of compressed bytes, or 0 if the input did not
 	 * compress to less than its original size. */
 	return result;
+}
+
+static size_t
+lzx_compress(const void *restrict in, size_t in_nbytes,
+		    void *restrict out, size_t out_nbytes_avail,
+		    void *restrict _c)
+{
+	struct lzx_compressor *c = _c;
+
+	lzx_reset(c);
+	return lzx_compress_common(in, in_nbytes, out, out_nbytes_avail, c);
+}
+
+static size_t
+lzx_cab_compress(const void *restrict in, size_t in_nbytes,
+		    void *restrict out, size_t out_nbytes_avail,
+		    void *restrict _c)
+{
+	struct lzx_compressor *c = _c;
+
+	if (c->e8_chunk_offset == 0)
+		lzx_reset(c);
+
+	return lzx_compress_common(in, in_nbytes, out, out_nbytes_avail, c);
 }
 
 /* Free an LZX compressor. */
@@ -2965,9 +3130,49 @@ lzx_free_compressor(void *_c)
 	FREE(c);
 }
 
+static int
+lzx_set_uint_property(enum wimlib_compressor_uint_property property,
+		      size_t value, void *_c)
+{
+	return WIMLIB_ERR_INVALID_PARAM;
+}
+
+static int
+lzx_cab_set_uint_property(enum wimlib_compressor_uint_property property,
+			  size_t value, void *_c)
+{
+	struct lzx_compressor *c = _c;
+
+	switch (property)
+	{
+	case WIMLIB_COMPRESSION_LZX_PROP_UINT_E8_FILE_SIZE:
+		/* Don't allow the E8 file size to be changed after encoding
+		 * the first block. */
+		if (value > 0xFFFFFFFFu || c->e8_chunk_offset > 0) {
+			return WIMLIB_ERR_INVALID_PARAM;
+		}
+
+		c->e8_file_size = (u32)value;
+		break;
+	default:
+		return WIMLIB_ERR_INVALID_PARAM;
+	}
+
+	return WIMLIB_ERR_SUCCESS;
+}
+
 const struct compressor_ops lzx_compressor_ops = {
 	.get_needed_memory  = lzx_get_needed_memory,
 	.create_compressor  = lzx_create_compressor,
 	.compress	    = lzx_compress,
 	.free_compressor    = lzx_free_compressor,
+	.set_uint_property  = lzx_set_uint_property,
+};
+
+const struct compressor_ops lzx_cab_compressor_ops = {
+	.get_needed_memory  = lzx_get_needed_memory,
+	.create_compressor  = lzx_cab_create_compressor,
+	.compress	    = lzx_cab_compress,
+	.free_compressor    = lzx_free_compressor,
+	.set_uint_property  = lzx_cab_set_uint_property,
 };

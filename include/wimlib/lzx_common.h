@@ -21,9 +21,9 @@ unsigned
 lzx_get_num_main_syms(unsigned window_order);
 
 void
-lzx_preprocess(u8 *data, u32 size);
+lzx_preprocess(u8 *data, u32 size, u32 chunk_offset, u32 e8_file_size);
 
 void
-lzx_postprocess(u8 *data, u32 size);
+lzx_postprocess(u8 *data, u32 size, u32 chunk_offset, u32 e8_file_size);
 
 #endif /* _LZX_COMMON_H */

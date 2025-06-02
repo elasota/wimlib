@@ -102,31 +102,31 @@ lzx_get_num_main_syms(unsigned window_order)
 }
 
 static void
-do_translate_target(void *target, s32 input_pos)
+do_translate_target(void *target, s32 input_pos, u32 e8_file_size)
 {
 	s32 abs_offset, rel_offset;
 
 	rel_offset = get_unaligned_le32(target);
-	if (rel_offset >= -input_pos && rel_offset < LZX_WIM_MAGIC_FILESIZE) {
-		if (rel_offset < LZX_WIM_MAGIC_FILESIZE - input_pos) {
+	if (rel_offset >= -input_pos && rel_offset < e8_file_size) {
+		if (rel_offset < e8_file_size - input_pos) {
 			/* "good translation" */
 			abs_offset = rel_offset + input_pos;
 		} else {
 			/* "compensating translation" */
-			abs_offset = rel_offset - LZX_WIM_MAGIC_FILESIZE;
+			abs_offset = rel_offset - e8_file_size;
 		}
 		put_unaligned_le32(abs_offset, target);
 	}
 }
 
 static void
-undo_translate_target(void *target, s32 input_pos)
+undo_translate_target(void *target, s32 input_pos, u32 e8_file_size)
 {
 	s32 abs_offset, rel_offset;
 
 	abs_offset = get_unaligned_le32(target);
 	if (abs_offset >= 0) {
-		if (abs_offset < LZX_WIM_MAGIC_FILESIZE) {
+		if (abs_offset < e8_file_size) {
 			/* "good translation" */
 			rel_offset = abs_offset - input_pos;
 			put_unaligned_le32(rel_offset, target);
@@ -134,7 +134,7 @@ undo_translate_target(void *target, s32 input_pos)
 	} else {
 		if (abs_offset >= -input_pos) {
 			/* "compensating translation" */
-			rel_offset = abs_offset + LZX_WIM_MAGIC_FILESIZE;
+			rel_offset = abs_offset + e8_file_size;
 			put_unaligned_le32(rel_offset, target);
 		}
 	}
@@ -167,7 +167,8 @@ undo_translate_target(void *target, s32 input_pos)
  * is always the same (LZX_WIM_MAGIC_FILESIZE == 12000000).
  */
 static void
-lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
+lzx_e8_filter(u8 *data, u32 size, u32 chunk_offset, u32 e8_file_size,
+	      void (*process_target)(void *, s32, u32))
 {
 
 #if !defined(__SSE2__) && !defined(__AVX2__)
@@ -197,7 +198,8 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 			p++;
 		if (p >= tail)
 			break;
-		(*process_target)(p + 1, p - data);
+		(*process_target)(p + 1, p - data + chunk_offset,
+				  e8_file_size);
 		p += 5;
 	}
 	memcpy(tail, saved_bytes, 6);
@@ -220,7 +222,8 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 		if (p >= data + size - 10)
 			return;
 		if (*p == 0xE8 && (valid_mask & 1)) {
-			(*process_target)(p + 1, p - data);
+			(*process_target)(p + 1, p - data + chunk_offset,
+					  e8_file_size);
 			valid_mask &= ~0x1F;
 		}
 		p++;
@@ -289,7 +292,9 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 			 * was itself part of a translation target.  */
 			while ((e8_mask &= valid_mask)) {
 				unsigned bit = bsf32(e8_mask);
-				(*process_target)(p + bit + 1, p + bit - data);
+				(*process_target)(p + bit + 1,
+						  p + bit - data + chunk_offset,
+						  e8_file_size);
 				valid_mask &= ~((u64)0x1F << bit);
 			}
 
@@ -304,7 +309,8 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 	/* Approaching the end of the buffer; process one byte a time.  */
 	while (p < data + size - 10) {
 		if (*p == 0xE8 && (valid_mask & 1)) {
-			(*process_target)(p + 1, p - data);
+			(*process_target)(p + 1, p - data + chunk_offset,
+					  e8_file_size);
 			valid_mask &= ~0x1F;
 		}
 		p++;
@@ -315,13 +321,15 @@ lzx_e8_filter(u8 *data, u32 size, void (*process_target)(void *, s32))
 }
 
 void
-lzx_preprocess(u8 *data, u32 size)
+lzx_preprocess(u8 *data, u32 size, u32 chunk_offset, u32 e8_file_size)
 {
-	lzx_e8_filter(data, size, do_translate_target);
+	lzx_e8_filter(data, size, chunk_offset, e8_file_size,
+		      do_translate_target);
 }
 
 void
-lzx_postprocess(u8 *data, u32 size)
+lzx_postprocess(u8 *data, u32 size, u32 chunk_offset, u32 e8_file_size)
 {
-	lzx_e8_filter(data, size, undo_translate_target);
+	lzx_e8_filter(data, size, chunk_offset, e8_file_size,
+		      undo_translate_target);
 }

@@ -27,9 +27,13 @@ struct compressor_ops {
 			   void *private);
 
 	void (*free_compressor)(void *private);
+
+	int (*set_uint_property)(enum wimlib_compressor_uint_property property,
+				 size_t value, void *private);
 };
 
 extern const struct compressor_ops lzx_compressor_ops;
+extern const struct compressor_ops lzx_cab_compressor_ops;
 extern const struct compressor_ops xpress_compressor_ops;
 extern const struct compressor_ops lzms_compressor_ops;
 

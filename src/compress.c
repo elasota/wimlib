@@ -42,6 +42,7 @@ static const struct compressor_ops * const compressor_ops[] = {
 	[WIMLIB_COMPRESSION_TYPE_XPRESS] = &xpress_compressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_LZX]    = &lzx_compressor_ops,
 	[WIMLIB_COMPRESSION_TYPE_LZMS]   = &lzms_compressor_ops,
+	[WIMLIB_COMPRESSION_TYPE_LZX_CAB]= &lzx_cab_compressor_ops,
 };
 
 /* Scale: 10 = low, 50 = medium, 100 = high */
@@ -167,6 +168,16 @@ wimlib_create_compressor(enum wimlib_compression_type ctype,
 	}
 	*c_ret = c;
 	return 0;
+}
+
+
+
+WIMLIBAPI int
+wimlib_set_compressor_uint_property(
+    struct wimlib_compressor *c,
+    enum wimlib_compressor_uint_property property, size_t value)
+{
+	return c->ops->set_uint_property(property, value, c->private);
 }
 
 WIMLIBAPI size_t
