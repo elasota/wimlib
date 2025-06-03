@@ -200,14 +200,17 @@ enum lzx_compression_variant {
 /* Matchfinders with 16-bit positions */
 #define mf_pos_t	u16
 #define MF_SUFFIX	_16
+#define MF_INVALID_POS	(0xFFFFu)
 #include "wimlib/bt_matchfinder.h"
 #include "wimlib/hc_matchfinder.h"
 
 /* Matchfinders with 32-bit positions */
 #undef mf_pos_t
 #undef MF_SUFFIX
+#undef MF_INVALID_POS
 #define mf_pos_t	u32
 #define MF_SUFFIX	_32
+#define MF_INVALID_POS	(0xFFFFFFFFu)
 #include "wimlib/bt_matchfinder.h"
 #include "wimlib/hc_matchfinder.h"
 
@@ -2286,6 +2289,23 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 	next_hashes[0] = c->next_hashes[0];
 	next_hashes[1] = c->next_hashes[1];
 
+	if (in_end - in_begin >= BT_MATCHFINDER_REQUIRED_NBYTES) {
+		/* Scan any bytes that were too close to the end of the last block. */
+		const u8 *prescan_end = min_ptr(
+		    in_end - (BT_MATCHFINDER_REQUIRED_NBYTES - 1), in_next);
+		const u8 *prescan =
+		    in_next - min_unsigned((BT_MATCHFINDER_REQUIRED_NBYTES - 1),
+					   prefix_size);
+
+		while (prescan != prescan_end) {
+
+			CALL_BT_MF(is_16_bit, c, bt_matchfinder_skip_byte,
+				   in_begin, prescan - in_begin, nice_len,
+				   c->max_search_depth, next_hashes);
+			prescan++;
+		}
+	}
+
 	do {
 		/* Starting a new block */
 
@@ -2475,18 +2495,22 @@ lzx_compress_near_optimal_32(struct lzx_compressor *c, const u8 *in,
 	lzx_compress_near_optimal(c, in, in_nbytes, os, false);
 }
 
+static attrib_forceinline void
+lzx_cull_near_optimal(struct lzx_compressor *c, size_t nbytes, const bool is_16_bit)
+{
+	CALL_BT_MF(is_16_bit, c, bt_matchfinder_cull, nbytes, c->window_size);
+}
+
 static void
 lzx_cull_near_optimal_16(struct lzx_compressor *c, size_t nbytes)
 {
-	CALL_BT_MF(true, c, bt_matchfinder_cull, c->in_buffer, nbytes,
-		   LZX_MAX_MATCH_LEN);
+	lzx_cull_near_optimal(c, nbytes, true);
 }
 
 static void
 lzx_cull_near_optimal_32(struct lzx_compressor *c, size_t nbytes)
 {
-	CALL_BT_MF(false, c, bt_matchfinder_cull, c->in_buffer, nbytes,
-		   LZX_MAX_MATCH_LEN);
+	lzx_cull_near_optimal(c, nbytes, false);
 }
 
 /******************************************************************************/
@@ -3218,13 +3242,16 @@ lzx_compress_common(const void *restrict in, size_t in_nbytes,
 			    c->in_buffer_capacity - c->in_prefix_size;
 
 			if (available < in_nbytes) {
-				c->cull(c, c->in_prefix_size - c->window_size);
+				u32 cull_amount =
+				    c->in_prefix_size - c->window_size;
 
 				c->in_prefix_size = c->window_size;
 
 				memmove(c->in_buffer,
 					prefix_end - c->in_prefix_size,
 					c->in_prefix_size);
+
+				c->cull(c, cull_amount);
 
 				prefix_end = (u8 *)c->in_buffer;
 			}

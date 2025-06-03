@@ -112,6 +112,32 @@ struct TEMPLATED(bt_matchfinder) {
 	mf_pos_t child_tab[];
 };
 
+static attrib_forceinline bool
+TEMPLATED(bt_is_valid_pos)(mf_pos_t pos, mf_pos_t min_pos)
+{
+	return ((pos + 1) & MF_INVALID_POS) > min_pos;
+}
+
+static attrib_forceinline void
+TEMPLATED(matchfinder_rebase)(mf_pos_t * mf_base, size_t count,
+			      mf_pos_t cull_amount)
+{
+	/* The invalid value points to the last element of the buffer. */
+	/* Since no match can start from that byte, it is always invalid. */
+	while (count > 0) {
+		mf_pos_t pos = *mf_base;
+
+		if (pos < cull_amount || pos != MF_INVALID_POS) {
+			*mf_base = MF_INVALID_POS;
+		} else {
+			*mf_base -= cull_amount;
+		}
+
+		mf_base++;
+		count--;
+	}
+}
+
 /* Return the number of bytes that must be allocated for a 'bt_matchfinder' that
  * can work with buffers up to the specified size.  */
 static attrib_forceinline size_t
@@ -127,7 +153,7 @@ TEMPLATED(bt_matchfinder_size)(size_t max_bufsize, bool streaming)
 static attrib_forceinline void
 TEMPLATED(bt_matchfinder_init)(struct TEMPLATED(bt_matchfinder) *mf)
 {
-	memset(mf, 0, sizeof(*mf));
+	memset(mf, 0xFF, sizeof(*mf));
 }
 
 static attrib_forceinline mf_pos_t *
@@ -152,7 +178,7 @@ TEMPLATED(bt_right_child)(struct TEMPLATED(bt_matchfinder) *mf, u32 node)
 static attrib_forceinline struct lz_match *
 TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * const mf,
 					   const u8 * const in_begin,
-					   const u32 in_min_pos,
+					   mf_pos_t in_min_pos,
 					   const ptrdiff_t cur_pos,
 					   const u32 max_len,
 					   const u32 nice_len,
@@ -199,9 +225,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	cur_node = mf->hash2_tab[hash2];
 	mf->hash2_tab[hash2] = cur_pos;
 	if (record_matches &&
-	    seq2 == load_u16_unaligned(&in_begin[cur_node]) &&
-	    likely(in_next != in_begin) &&
-	    likely(cur_node >= in_min_pos))
+	    TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos) &&
+	    seq2 == load_u16_unaligned(&in_begin[cur_node]))
 	{
 		lz_matchptr->length = 2;
 		lz_matchptr->offset = in_next - &in_begin[cur_node];
@@ -215,7 +240,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	cur_node_2 = mf->hash3_tab[hash3][1];
 	mf->hash3_tab[hash3][1] = cur_node;
 #endif
-	if (record_matches && likely(in_next != in_begin)) {
+	if (record_matches &&
+	    TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos)) {
 		u32 seq3 = load_u24_unaligned(in_next);
 		if (seq3 == load_u24_unaligned(&in_begin[cur_node]) &&
 			likely(cur_node >= in_min_pos)) {
@@ -224,8 +250,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 			lz_matchptr++;
 		}
 	#if BT_MATCHFINDER_HASH3_WAYS >= 2
-		else if (seq3 == load_u24_unaligned(&in_begin[cur_node_2]) &&
-			likely(cur_node_2 >= in_min_pos)) {
+		else if (TEMPLATED(bt_is_valid_pos)(cur_node_2, in_min_pos) &&
+			seq3 == load_u24_unaligned(&in_begin[cur_node_2])) {
 			lz_matchptr->length = 3;
 			lz_matchptr->offset = in_next - &in_begin[cur_node_2];
 			lz_matchptr++;
@@ -239,9 +265,9 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	pending_lt_ptr = TEMPLATED(bt_left_child)(mf, cur_pos);
 	pending_gt_ptr = TEMPLATED(bt_right_child)(mf, cur_pos);
 
-	if (!cur_node) {
-		*pending_lt_ptr = 0;
-		*pending_gt_ptr = 0;
+	if (!TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos)) {
+		*pending_lt_ptr = MF_INVALID_POS;
+		*pending_gt_ptr = MF_INVALID_POS;
 		*best_len_ret = best_len;
 		return lz_matchptr;
 	}
@@ -256,24 +282,20 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 		if (matchptr[len] == in_next[len]) {
 			len = lz_extend(in_next, matchptr, len + 1, max_len);
 			if (!record_matches || len > best_len) {
-				if (matchptr - in_begin >= in_min_pos) {
-					if (record_matches) {
-						best_len = len;
-						lz_matchptr->length = len;
-						lz_matchptr->offset =
-						    in_next - matchptr;
-						lz_matchptr++;
-					}
-					if (len >= nice_len) {
-						*pending_lt_ptr =
-						    *TEMPLATED(bt_left_child)(
-							mf, cur_node);
-						*pending_gt_ptr =
-						    *TEMPLATED(bt_right_child)(
-							mf, cur_node);
-						*best_len_ret = best_len;
-						return lz_matchptr;
-					}
+				if (record_matches) {
+					best_len = len;
+					lz_matchptr->length = len;
+					lz_matchptr->offset =
+						in_next - matchptr;
+					lz_matchptr++;
+				}
+				if (len >= nice_len) {
+					*pending_lt_ptr =
+						*TEMPLATED(bt_left_child)(mf, cur_node);
+					*pending_gt_ptr =
+						*TEMPLATED(bt_right_child)(mf, cur_node);
+					*best_len_ret = best_len;
+					return lz_matchptr;
 				}
 			}
 		}
@@ -294,9 +316,10 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 				len = best_lt_len;
 		}
 
-		if (!cur_node || !--depth_remaining) {
-			*pending_lt_ptr = 0;
-			*pending_gt_ptr = 0;
+		if (!TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos) ||
+		    !--depth_remaining) {
+			*pending_lt_ptr = MF_INVALID_POS;
+			*pending_gt_ptr = MF_INVALID_POS;
 			*best_len_ret = best_len;
 			return lz_matchptr;
 		}
@@ -401,6 +424,11 @@ TEMPLATED(bt_matchfinder_skip_byte)(struct TEMPLATED(bt_matchfinder) *mf,
  */
 static attrib_forceinline void
 TEMPLATED(bt_matchfinder_cull)(struct TEMPLATED(bt_matchfinder) * mf,
-			       const u8 *in_begin, u32 cull_size, u32 max_len)
+			       u32 cull_size, u32 window_size)
 {
+	const size_t mf_count =
+	    TEMPLATED(bt_matchfinder_size)(window_size, true) /
+	    sizeof(mf_pos_t);
+
+	TEMPLATED(matchfinder_rebase)((mf_pos_t *)mf, mf_count, cull_size);
 }
