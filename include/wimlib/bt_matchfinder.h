@@ -127,7 +127,7 @@ TEMPLATED(matchfinder_rebase)(mf_pos_t * mf_base, size_t count,
 	while (count > 0) {
 		mf_pos_t pos = *mf_base;
 
-		if (pos < cull_amount || pos != MF_INVALID_POS) {
+		if (pos < cull_amount || pos == MF_INVALID_POS) {
 			*mf_base = MF_INVALID_POS;
 		} else {
 			*mf_base -= cull_amount;
