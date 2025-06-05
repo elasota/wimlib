@@ -3253,7 +3253,7 @@ lzx_compress_common(const void *restrict in, size_t in_nbytes,
 
 				c->cull(c, cull_amount);
 
-				prefix_end = (u8 *)c->in_buffer;
+				prefix_end = (u8 *)c->in_buffer + c->in_prefix_size;
 			}
 		}
 		
