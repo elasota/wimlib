@@ -2282,6 +2282,10 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 	struct lzx_lru_queue queue;
 	const u32 in_abs_pos = c->e8_chunk_offset - c->in_prefix_size;
 
+	if (window_size >= (1 << LZX_MAX_WINDOW_ORDER)) {
+		window_size = (1 << LZX_MAX_WINDOW_ORDER) - 1;
+	}
+
 	in_begin -= c->in_prefix_size;
 
 	/* Load the LRU queue and next hashes*/
@@ -2299,9 +2303,13 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 
 		while (prescan != prescan_end) {
 
+			size_t min_match_pos = prescan - in_begin;
+			min_match_pos -=
+			    min_unsigned(min_match_pos, window_size);
+
 			CALL_BT_MF(is_16_bit, c, bt_matchfinder_skip_byte,
-				   in_begin, prescan - in_begin, nice_len,
-				   c->max_search_depth, next_hashes);
+				   in_begin, min_match_pos, prescan - in_begin,
+				   nice_len, c->max_search_depth, next_hashes);
 			prescan++;
 		}
 	}
@@ -2338,13 +2346,14 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 		 */
 	resume_matchfinding:
 		do {
+			size_t min_match_pos = in_next - in_begin;
+			min_match_pos -=
+			    min_unsigned(min_match_pos, window_size);
+
 			if (in_next >= next_search_pos) {
 				/* Search for matches at this position. */
 				struct lz_match *lz_matchptr;
 				u32 best_len;
-				size_t min_match_pos = in_next - in_begin;
-				min_match_pos -=
-				    min_unsigned(min_match_pos, window_size);
 
 				lz_matchptr = CALL_BT_MF(is_16_bit, c,
 							 bt_matchfinder_get_matches,
@@ -2411,7 +2420,7 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 				/* Don't search for matches at this position. */
 				CALL_BT_MF(is_16_bit, c,
 					   bt_matchfinder_skip_byte,
-					   in_begin,
+					   in_begin, min_match_pos,
 					   in_next - in_begin,
 					   nice_len,
 					   c->max_search_depth,
