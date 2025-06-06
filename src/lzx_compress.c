@@ -2280,10 +2280,9 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 	u32 nice_len = min_unsigned(c->nice_match_length, max_len);
 	u32 next_hashes[2] = {0, 0};
 	struct lzx_lru_queue queue;
-	const u32 in_abs_pos = c->e8_chunk_offset - c->in_prefix_size;
 
-	if (window_size >= (1 << LZX_MAX_WINDOW_ORDER)) {
-		window_size = (1 << LZX_MAX_WINDOW_ORDER) - 1;
+	if (window_size >= LZX_MAX_WINDOW_SIZE) {
+		window_size = LZX_MAX_WINDOW_SIZE - 1;
 	}
 
 	in_begin -= c->in_prefix_size;
@@ -2420,7 +2419,8 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 				/* Don't search for matches at this position. */
 				CALL_BT_MF(is_16_bit, c,
 					   bt_matchfinder_skip_byte,
-					   in_begin, min_match_pos,
+					   in_begin,
+					   min_match_pos,
 					   in_next - in_begin,
 					   nice_len,
 					   c->max_search_depth,
@@ -2686,6 +2686,8 @@ lzx_repeat_offset_match_score(unsigned rep_len, unsigned rep_idx)
 static attrib_forceinline void
 lzx_reset_lazy(struct lzx_compressor *c, bool is_16_bit)
 {
+	/* Initialize the matchfinder. */
+	CALL_HC_MF(is_16_bit, c, hc_matchfinder_init);
 }
 
 static void
@@ -2702,9 +2704,11 @@ lzx_reset_lazy_32(struct lzx_compressor *c)
 
 static attrib_forceinline void
 lzx_compress_lazy(struct lzx_compressor * restrict c,
-		  const u8 * const restrict in_begin, size_t in_nbytes,
+		  const u8 * restrict in_begin, size_t in_nbytes,
 		  struct lzx_output_bitstream * restrict os, bool is_16_bit)
 {
+	u32 prefix_size		 = c->in_prefix_size;
+	u32 window_size		 = c->window_size;
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end  = in_begin + in_nbytes;
 	unsigned max_len = LZX_MAX_MATCH_LEN;
@@ -2712,6 +2716,12 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 	STATIC_ASSERT(LZX_NUM_RECENT_OFFSETS == 3);
 	u32 recent_offsets[LZX_NUM_RECENT_OFFSETS];
 	u32 next_hashes[2];
+
+	if (window_size >= LZX_MAX_WINDOW_SIZE) {
+		window_size = LZX_MAX_WINDOW_SIZE - 1;
+	}
+
+	in_begin -= c->in_prefix_size;
 
 	/* Load the LRU queue and next hashes. */
 	{
@@ -2722,6 +2732,26 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 
 		next_hashes[0] = c->next_hashes[0];
 		next_hashes[1] = c->next_hashes[1];
+	}
+
+	if (in_end - in_begin >= HC_MATCHFINDER_REQUIRED_NBYTES) {
+		/* Scan any bytes that were too close to the end of the last
+		 * block. */
+		const u8 *prescan_end = min_ptr(
+		    in_end - (HC_MATCHFINDER_REQUIRED_NBYTES - 1), in_next);
+		const u8 *prescan =
+		    in_next - min_unsigned((HC_MATCHFINDER_REQUIRED_NBYTES - 1),
+					   prefix_size);
+
+		if (prescan != prescan_end) {
+			CALL_HC_MF(is_16_bit, c,
+					hc_matchfinder_skip_bytes,
+					in_begin,
+					prescan,
+					in_end,
+					prescan_end - prescan,
+					next_hashes);
+		}
 	}
 
 	do {
@@ -2760,16 +2790,23 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 			 * max_search_depth cutoff parameter) with the current
 			 * position.  Don't bother with length 2 matches; only
 			 * look for matches of length >= 3. */
-			cur_len = CALL_HC_MF(is_16_bit, c,
-					     hc_matchfinder_longest_match,
-					     in_begin,
-					     in_next,
-					     2,
-					     max_len,
-					     nice_len,
-					     c->max_search_depth,
-					     next_hashes,
-					     &cur_offset);
+			{
+				size_t min_match_pos = in_next - in_begin;
+				min_match_pos -=
+				    min_unsigned(min_match_pos, window_size);
+
+				cur_len = CALL_HC_MF(is_16_bit, c,
+						     hc_matchfinder_longest_match,
+						     in_begin,
+						     min_match_pos,
+						     in_next,
+						     2,
+						     max_len,
+						     nice_len,
+						     c->max_search_depth,
+						     next_hashes,
+						     &cur_offset);
+			}
 
 			/* If there was no match found, or the only match found
 			 * was a distant short match, then choose a literal. */
@@ -2837,16 +2874,24 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 				nice_len = min_unsigned(max_len, nice_len);
 			}
 
-			next_len = CALL_HC_MF(is_16_bit, c,
-					      hc_matchfinder_longest_match,
-					      in_begin,
-					      in_next,
-					      cur_len - 2,
-					      max_len,
-					      nice_len,
-					      c->max_search_depth / 2,
-					      next_hashes,
-					      &next_offset);
+			{
+				size_t min_match_pos = in_next - in_begin;
+				min_match_pos -=
+				    min_unsigned(min_match_pos, window_size);
+
+				next_len = CALL_HC_MF(
+				    is_16_bit, c,
+						      hc_matchfinder_longest_match,
+						      in_begin,
+						      min_match_pos,
+						      in_next,
+						      cur_len - 2,
+						      max_len,
+						      nice_len,
+						      c->max_search_depth / 2,
+						      next_hashes,
+						      &next_offset);
+			}
 
 			if (next_len <= cur_len - 2) {
 				/* No potentially better match was found. */
@@ -2901,6 +2946,7 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 			lzx_choose_match(c, cur_len, cur_adjusted_offset,
 					 recent_offsets, is_16_bit,
 					 &litrunlen, &next_seq);
+
 			CALL_HC_MF(is_16_bit, c,
 				   hc_matchfinder_skip_bytes,
 				   in_begin,
@@ -2953,15 +2999,13 @@ lzx_compress_lazy_32(struct lzx_compressor *c, const u8 *in, size_t in_nbytes,
 static void
 lzx_cull_lazy_16(struct lzx_compressor *c, size_t nbytes)
 {
-	CALL_HC_MF(true, c, hc_matchfinder_cull, c->in_buffer, nbytes,
-		   LZX_MAX_MATCH_LEN);
+	CALL_HC_MF(true, c, hc_matchfinder_cull, nbytes, c->window_size);
 }
 
 static void
 lzx_cull_lazy_32(struct lzx_compressor *c, size_t nbytes)
 {
-	CALL_HC_MF(false, c, hc_matchfinder_cull, c->in_buffer, nbytes,
-		   LZX_MAX_MATCH_LEN);
+	CALL_HC_MF(false, c, hc_matchfinder_cull, nbytes, c->window_size);
 }
 
 /******************************************************************************/

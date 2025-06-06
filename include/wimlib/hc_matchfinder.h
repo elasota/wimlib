@@ -149,16 +149,23 @@ struct TEMPLATED(hc_matchfinder) {
 static attrib_forceinline size_t
 TEMPLATED(hc_matchfinder_size)(size_t max_bufsize, bool streaming)
 {
+	const size_t streaming_mul = streaming ? 2 : 1;
+
 	return sizeof(struct TEMPLATED(hc_matchfinder)) +
-		(max_bufsize * sizeof(mf_pos_t));
+	       (max_bufsize * streaming_mul * sizeof(mf_pos_t));
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
 static attrib_forceinline void
 TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
 {
-	memset(mf, 0, sizeof(*mf));
+	memset(mf, 0xFF, sizeof(*mf));
 }
+
+/* The minimum permissible value of 'max_len' for bt_matchfinder_get_matches()
+ * and bt_matchfinder_skip_byte().  There must be sufficiently many bytes
+ * remaining to load a 32-bit integer from the *next* position.  */
+#define HC_MATCHFINDER_REQUIRED_NBYTES 5
 
 /*
  * Find the longest match longer than 'best_len' bytes.
@@ -192,6 +199,7 @@ TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
 static attrib_forceinline u32
 TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const mf,
 					const u8 * const in_begin,
+				        u32 in_min_pos,
 					const u8 * const in_next,
 					u32 best_len,
 					const u32 max_len,
@@ -210,7 +218,8 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 	u32 len;
 	u32 cur_pos = in_next - in_begin;
 
-	if (unlikely(max_len < 5)) /* can we read 4 bytes from 'in_next + 1'? */
+	/* can we read 4 bytes from 'in_next + 1'? */
+	if (unlikely(max_len < HC_MATCHFINDER_REQUIRED_NBYTES))
 		goto out;
 
 	/* Get the precomputed hash codes.  */
@@ -241,7 +250,7 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 
 		/* Check for a length 3 match if needed.  */
 
-		if (!cur_node3)
+		if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node3, in_min_pos))
 			goto out;
 
 		seq4 = load_u32_unaligned(in_next);
@@ -256,7 +265,7 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 
 		/* Check for a length 4 match.  */
 
-		if (!cur_node4)
+		if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node4, in_min_pos))
 			goto out;
 
 		for (;;) {
@@ -268,7 +277,9 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 
 			/* The first 4 bytes did not match.  Keep trying.  */
 			cur_node4 = mf->next_tab[cur_node4];
-			if (!cur_node4 || !--depth_remaining)
+			if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node4,
+								 in_min_pos) ||
+			    !--depth_remaining)
 				goto out;
 		}
 
@@ -278,10 +289,14 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 		if (best_len >= nice_len)
 			goto out;
 		cur_node4 = mf->next_tab[cur_node4];
-		if (!cur_node4 || !--depth_remaining)
+		if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node4,
+							 in_min_pos) ||
+		    !--depth_remaining)
 			goto out;
 	} else {
-		if (!cur_node4 || best_len >= nice_len)
+		if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node4,
+							 in_min_pos) ||
+		    best_len >= nice_len)
 			goto out;
 	}
 
@@ -308,7 +323,9 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 
 			/* Continue to the next node in the list.  */
 			cur_node4 = mf->next_tab[cur_node4];
-			if (!cur_node4 || !--depth_remaining)
+			if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node4,
+								 in_min_pos) ||
+				!--depth_remaining)
 				goto out;
 		}
 
@@ -328,7 +345,9 @@ TEMPLATED(hc_matchfinder_longest_match)(struct TEMPLATED(hc_matchfinder) * const
 
 		/* Continue to the next node in the list.  */
 		cur_node4 = mf->next_tab[cur_node4];
-		if (!cur_node4 || !--depth_remaining)
+		if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node4,
+							 in_min_pos) ||
+		    !--depth_remaining)
 			goto out;
 	}
 out:
@@ -367,7 +386,7 @@ TEMPLATED(hc_matchfinder_skip_bytes)(struct TEMPLATED(hc_matchfinder) * const mf
 	u32 next_hashseq;
 	u32 remaining = count;
 
-	if (unlikely(count + 5 > in_end - in_next))
+	if (unlikely(count + HC_MATCHFINDER_REQUIRED_NBYTES > in_end - in_next))
 		return;
 
 	cur_pos = in_next - in_begin;
@@ -396,6 +415,11 @@ TEMPLATED(hc_matchfinder_skip_bytes)(struct TEMPLATED(hc_matchfinder) * const mf
  */
 static attrib_forceinline void
 TEMPLATED(hc_matchfinder_cull)(struct TEMPLATED(hc_matchfinder) * mf,
-			       const u8 *in_begin, u32 cull_size, u32 max_len)
+			       u32 cull_size, u32 window_size)
 {
+	const size_t mf_count =
+	    TEMPLATED(hc_matchfinder_size)(window_size, true) /
+	    sizeof(mf_pos_t);
+
+	TEMPLATED(matchfinder_rebase)((mf_pos_t *)mf, mf_count, cull_size);
 }

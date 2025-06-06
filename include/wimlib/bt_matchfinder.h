@@ -113,7 +113,7 @@ struct TEMPLATED(bt_matchfinder) {
 };
 
 static attrib_forceinline bool
-TEMPLATED(bt_is_valid_pos)(mf_pos_t pos, mf_pos_t min_pos)
+TEMPLATED(matchfinder_is_valid_pos)(mf_pos_t pos, mf_pos_t min_pos)
 {
 	return ((pos + 1) & MF_INVALID_POS) > min_pos;
 }
@@ -225,7 +225,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	cur_node = mf->hash2_tab[hash2];
 	mf->hash2_tab[hash2] = cur_pos;
 	if (record_matches &&
-	    TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos) &&
+	    TEMPLATED(matchfinder_is_valid_pos)(cur_node, in_min_pos) &&
 	    seq2 == load_u16_unaligned(&in_begin[cur_node]))
 	{
 		lz_matchptr->length = 2;
@@ -241,7 +241,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	mf->hash3_tab[hash3][1] = cur_node;
 #endif
 	if (record_matches &&
-	    TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos)) {
+	    TEMPLATED(matchfinder_is_valid_pos)(cur_node, in_min_pos)) {
 		u32 seq3 = load_u24_unaligned(in_next);
 		if (seq3 == load_u24_unaligned(&in_begin[cur_node]) &&
 			likely(cur_node >= in_min_pos)) {
@@ -250,7 +250,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 			lz_matchptr++;
 		}
 	#if BT_MATCHFINDER_HASH3_WAYS >= 2
-		else if (TEMPLATED(bt_is_valid_pos)(cur_node_2, in_min_pos) &&
+		else if (TEMPLATED(matchfinder_is_valid_pos)(cur_node_2,
+							     in_min_pos) &&
 			seq3 == load_u24_unaligned(&in_begin[cur_node_2])) {
 			lz_matchptr->length = 3;
 			lz_matchptr->offset = in_next - &in_begin[cur_node_2];
@@ -265,7 +266,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 	pending_lt_ptr = TEMPLATED(bt_left_child)(mf, cur_pos);
 	pending_gt_ptr = TEMPLATED(bt_right_child)(mf, cur_pos);
 
-	if (!TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos)) {
+	if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node, in_min_pos)) {
 		*pending_lt_ptr = MF_INVALID_POS;
 		*pending_gt_ptr = MF_INVALID_POS;
 		*best_len_ret = best_len;
@@ -316,7 +317,8 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 				len = best_lt_len;
 		}
 
-		if (!TEMPLATED(bt_is_valid_pos)(cur_node, in_min_pos) ||
+		if (!TEMPLATED(matchfinder_is_valid_pos)(cur_node,
+							 in_min_pos) ||
 		    !--depth_remaining) {
 			*pending_lt_ptr = MF_INVALID_POS;
 			*pending_gt_ptr = MF_INVALID_POS;
