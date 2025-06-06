@@ -157,9 +157,10 @@ TEMPLATED(hc_matchfinder_size)(size_t max_bufsize, bool streaming)
 
 /* Prepare the matchfinder for a new input buffer.  */
 static attrib_forceinline void
-TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) *mf)
+TEMPLATED(hc_matchfinder_init)(struct TEMPLATED(hc_matchfinder) * mf,
+			       size_t max_bufsize, bool streaming)
 {
-	memset(mf, 0xFF, sizeof(*mf));
+	memset(mf, 0xFF, TEMPLATED(hc_matchfinder_size)(max_bufsize, streaming));
 }
 
 /* The minimum permissible value of 'max_len' for bt_matchfinder_get_matches()

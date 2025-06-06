@@ -2686,8 +2686,11 @@ lzx_repeat_offset_match_score(unsigned rep_len, unsigned rep_idx)
 static attrib_forceinline void
 lzx_reset_lazy(struct lzx_compressor *c, bool is_16_bit)
 {
+	bool streaming = (c->variant != LZX_COMPRESSION_VARIANT_WIM);
+
 	/* Initialize the matchfinder. */
-	CALL_HC_MF(is_16_bit, c, hc_matchfinder_init);
+	CALL_HC_MF(is_16_bit, c, hc_matchfinder_init, c->window_size,
+		   streaming);
 }
 
 static void
