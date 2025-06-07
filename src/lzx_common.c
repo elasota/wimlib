@@ -102,7 +102,7 @@ lzx_get_num_main_syms(unsigned window_order)
 }
 
 static void
-do_translate_target(void *target, s32 input_pos, u32 e8_file_size)
+do_translate_target(void *target, s32 input_pos, s32 e8_file_size)
 {
 	s32 abs_offset, rel_offset;
 
@@ -120,7 +120,7 @@ do_translate_target(void *target, s32 input_pos, u32 e8_file_size)
 }
 
 static void
-undo_translate_target(void *target, s32 input_pos, u32 e8_file_size)
+undo_translate_target(void *target, s32 input_pos, s32 e8_file_size)
 {
 	s32 abs_offset, rel_offset;
 
@@ -168,7 +168,7 @@ undo_translate_target(void *target, s32 input_pos, u32 e8_file_size)
  */
 static void
 lzx_e8_filter(u8 *data, u32 size, u32 chunk_offset, u32 e8_file_size,
-	      void (*process_target)(void *, s32, u32))
+	      void (*process_target)(void *, s32, s32))
 {
 
 #if !defined(__SSE2__) && !defined(__AVX2__)
