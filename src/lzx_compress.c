@@ -2267,49 +2267,85 @@ lzx_reset_near_optimal_32(struct lzx_compressor *c)
 }
 
 static attrib_forceinline void
+lzx_save_matchfinder_near_optimal(struct lzx_compressor *restrict c,
+				  u32 next_hashes[2], bool is_16_bit)
+{
+	CALL_BT_MF(is_16_bit, c, bt_matchfinder_save, c->window_size);
+	c->next_hashes[0] = next_hashes[0];
+	c->next_hashes[1] = next_hashes[1];
+}
+
+static attrib_forceinline void
+lzx_restore_matchfinder_near_optimal(struct lzx_compressor *restrict c,
+				     u32 next_hashes[2], bool is_16_bit)
+{
+	CALL_BT_MF(is_16_bit, c, bt_matchfinder_restore, c->window_size);
+	next_hashes[0] = c->next_hashes[0];
+	next_hashes[1] = c->next_hashes[1];
+}
+
+static attrib_forceinline void
 lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 			  const u8 * restrict in_begin, size_t in_nbytes,
 			  struct lzx_output_bitstream * restrict os,
 			  bool is_16_bit)
 {
 	u32 prefix_size		 = c->in_prefix_size;
-	u32 window_size		 = c->window_size;
+	u32 max_offset		 = c->window_size;
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end  = in_begin + in_nbytes;
+	const u8 *       in_backup_next = NULL;
+	const u8 *       in_backup_start = NULL;
 	u32 max_len = LZX_MAX_MATCH_LEN;
 	u32 nice_len = min_unsigned(c->nice_match_length, max_len);
 	u32 next_hashes[2] = {0, 0};
 	struct lzx_lru_queue queue;
 
-	if (window_size >= LZX_MAX_WINDOW_SIZE) {
-		window_size = LZX_MAX_WINDOW_SIZE - 1;
+	if (max_offset >= LZX_MAX_WINDOW_SIZE) {
+		max_offset = LZX_MAX_WINDOW_SIZE - 1;
 	}
 
 	in_begin -= c->in_prefix_size;
 
-	/* Load the LRU queue and next hashes*/
-	lzx_lru_queue_load(&queue, c->lru_queue);
-	next_hashes[0] = c->next_hashes[0];
-	next_hashes[1] = c->next_hashes[1];
+	if (c->variant != LZX_COMPRESSION_VARIANT_WIM &&
+	    in_next - in_begin > max_len) {
+		lzx_restore_matchfinder_near_optimal(c, next_hashes, is_16_bit);
 
+		in_backup_start = in_next - max_len;
+	} else {
+		CALL_BT_MF(is_16_bit, c, bt_matchfinder_init);
+		in_backup_start = in_begin;
+	}
+
+	if (in_end - in_begin > max_len) {
+		in_backup_next = in_end - max_len;
+	}
+
+	/* Load the LRU queue */
+	lzx_lru_queue_load(&queue, c->lru_queue);
+
+	/* Scan any bytes that were too close to the end of the last
+	 * block. */
 	if (in_end - in_begin >= BT_MATCHFINDER_REQUIRED_NBYTES) {
-		/* Scan any bytes that were too close to the end of the last block. */
 		const u8 *prescan_end = min_ptr(
 		    in_end - (BT_MATCHFINDER_REQUIRED_NBYTES - 1), in_next);
-		const u8 *prescan =
-		    in_next - min_unsigned((BT_MATCHFINDER_REQUIRED_NBYTES - 1),
-					   prefix_size);
 
-		while (prescan != prescan_end) {
+		while (in_backup_start < prescan_end) {
+			size_t cur_pos = in_backup_start - in_begin;
+			size_t min_match_pos = cur_pos;
 
-			size_t min_match_pos = prescan - in_begin;
 			min_match_pos -=
-			    min_unsigned(min_match_pos, window_size);
+			    min_unsigned(min_match_pos, max_offset);
+
+			if (in_backup_start == in_backup_next) {
+				lzx_save_matchfinder_near_optimal(
+				    c, next_hashes, is_16_bit);
+			}
 
 			CALL_BT_MF(is_16_bit, c, bt_matchfinder_skip_byte,
-				   in_begin, min_match_pos, prescan - in_begin,
-				   nice_len, c->max_search_depth, next_hashes);
-			prescan++;
+				   in_begin, min_match_pos, cur_pos, nice_len,
+				   c->max_search_depth, next_hashes);
+			in_backup_start++;
 		}
 	}
 
@@ -2347,7 +2383,12 @@ lzx_compress_near_optimal(struct lzx_compressor * restrict c,
 		do {
 			size_t min_match_pos = in_next - in_begin;
 			min_match_pos -=
-			    min_unsigned(min_match_pos, window_size);
+			    min_unsigned(min_match_pos, max_offset);
+
+			if (in_next == in_backup_next) {
+				lzx_save_matchfinder_near_optimal(
+				    c, next_hashes, is_16_bit);
+			}
 
 			if (in_next >= next_search_pos) {
 				/* Search for matches at this position. */
@@ -2711,7 +2752,7 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 		  struct lzx_output_bitstream * restrict os, bool is_16_bit)
 {
 	u32 prefix_size		 = c->in_prefix_size;
-	u32 window_size		 = c->window_size;
+	u32 max_offset		 = c->window_size;
 	const u8 *	 in_next = in_begin;
 	const u8 * const in_end  = in_begin + in_nbytes;
 	unsigned max_len = LZX_MAX_MATCH_LEN;
@@ -2720,8 +2761,8 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 	u32 recent_offsets[LZX_NUM_RECENT_OFFSETS];
 	u32 next_hashes[2];
 
-	if (window_size >= LZX_MAX_WINDOW_SIZE) {
-		window_size = LZX_MAX_WINDOW_SIZE - 1;
+	if (max_offset >= LZX_MAX_WINDOW_SIZE) {
+		max_offset = LZX_MAX_WINDOW_SIZE - 1;
 	}
 
 	in_begin -= c->in_prefix_size;
@@ -2796,7 +2837,7 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 			{
 				size_t min_match_pos = in_next - in_begin;
 				min_match_pos -=
-				    min_unsigned(min_match_pos, window_size);
+				    min_unsigned(min_match_pos, max_offset);
 
 				cur_len = CALL_HC_MF(is_16_bit, c,
 						     hc_matchfinder_longest_match,
@@ -2880,7 +2921,7 @@ lzx_compress_lazy(struct lzx_compressor * restrict c,
 			{
 				size_t min_match_pos = in_next - in_begin;
 				min_match_pos -=
-				    min_unsigned(min_match_pos, window_size);
+				    min_unsigned(min_match_pos, max_offset);
 
 				next_len = CALL_HC_MF(
 				    is_16_bit, c,
@@ -3047,9 +3088,16 @@ lzx_init_offset_slot_tabs(struct lzx_compressor *c)
 }
 
 static size_t
+lzx_bt_max_search_depth(unsigned compression_level)
+{
+	return (24 * compression_level) / 50;
+}
+
+static size_t
 lzx_get_compressor_size(size_t max_bufsize, unsigned compression_level,
 	bool streaming)
 {
+
 	if (compression_level <= MAX_FAST_LEVEL) {
 		if (lzx_is_16_bit(max_bufsize))
 			return offsetof(struct lzx_compressor, hc_mf_16) +
@@ -3058,12 +3106,23 @@ lzx_get_compressor_size(size_t max_bufsize, unsigned compression_level,
 			return offsetof(struct lzx_compressor, hc_mf_32) +
 			       hc_matchfinder_size_32(max_bufsize, streaming);
 	} else {
+		size_t max_search_depth =
+		    lzx_bt_max_search_depth(compression_level);
+
+		/* In streaming mode, there are 2 copies of the matchfinder so that
+		   the matchfinder state prior to end-of-block cutoffs can be
+		   recovered in the next block. */
+		const size_t streaming_mul = streaming ? 2 : 1;
+
 		if (lzx_is_16_bit(max_bufsize))
 			return offsetof(struct lzx_compressor, bt_mf_16) +
-			       bt_matchfinder_size_16(max_bufsize, streaming);
+			       bt_matchfinder_size_16(max_bufsize, streaming) *
+				   streaming_mul;
 		else
 			return offsetof(struct lzx_compressor, bt_mf_32) +
-			       bt_matchfinder_size_32(max_bufsize, streaming);
+			       bt_matchfinder_size_32(
+				   max_bufsize, streaming) *
+				   streaming_mul;
 	}
 }
 
@@ -3183,7 +3242,7 @@ lzx_create_compressor_ext(size_t max_bufsize, unsigned compression_level,
 
 		/* Scale max_search_depth and nice_match_length with the
 		 * compression level. */
-		c->max_search_depth = (24 * compression_level) / 50;
+		c->max_search_depth = lzx_bt_max_search_depth(compression_level);
 		c->nice_match_length = (48 * compression_level) / 50;
 
 		/* Also scale num_optim_passes with the compression level.  But

@@ -143,10 +143,13 @@ TEMPLATED(matchfinder_rebase)(mf_pos_t * mf_base, size_t count,
 static attrib_forceinline size_t
 TEMPLATED(bt_matchfinder_size)(size_t max_bufsize, bool streaming)
 {
-	const size_t streaming_mul = streaming ? 4 : 2;
+	const size_t streaming_bufsize_mul = streaming ? 4 : 2;
 
-	return sizeof(struct TEMPLATED(bt_matchfinder)) +
-	       (streaming_mul * max_bufsize * sizeof(mf_pos_t));
+	const size_t base_size =
+	    sizeof(struct TEMPLATED(bt_matchfinder)) +
+	    (streaming_bufsize_mul * max_bufsize * sizeof(mf_pos_t));
+
+	return base_size;
 }
 
 /* Prepare the matchfinder for a new input buffer.  */
@@ -323,6 +326,7 @@ TEMPLATED(bt_matchfinder_advance_one_byte)(struct TEMPLATED(bt_matchfinder) * co
 			*pending_lt_ptr = MF_INVALID_POS;
 			*pending_gt_ptr = MF_INVALID_POS;
 			*best_len_ret = best_len;
+
 			return lz_matchptr;
 		}
 	}
@@ -429,9 +433,30 @@ static attrib_forceinline void
 TEMPLATED(bt_matchfinder_cull)(struct TEMPLATED(bt_matchfinder) * mf,
 			       u32 cull_size, u32 window_size)
 {
-	const size_t mf_count =
-	    TEMPLATED(bt_matchfinder_size)(window_size, true) /
-	    sizeof(mf_pos_t);
+	size_t mf_size = TEMPLATED(bt_matchfinder_size)(window_size, true);
+	void *mf2 = ((u8 *)mf) + mf_size;
 
-	TEMPLATED(matchfinder_rebase)((mf_pos_t *)mf, mf_count, cull_size);
+	const size_t mf_count = mf_size / sizeof(mf_pos_t);
+
+	TEMPLATED(matchfinder_rebase)((mf_pos_t *)mf2, mf_count, cull_size);
+}
+
+static attrib_forceinline void
+TEMPLATED(bt_matchfinder_save)(struct TEMPLATED(bt_matchfinder) * mf,
+			       u32 window_size)
+{
+	size_t mf_size = TEMPLATED(bt_matchfinder_size)(window_size, true);
+	void *mf2 = ((u8 *)mf) + mf_size;
+
+	memcpy(mf2, mf, mf_size);
+}
+
+static attrib_forceinline void
+TEMPLATED(bt_matchfinder_restore)(struct TEMPLATED(bt_matchfinder) * mf,
+				  u32 window_size)
+{
+	size_t mf_size = TEMPLATED(bt_matchfinder_size)(window_size, true);
+	const void *mf2 = ((const u8 *)mf) + mf_size;
+
+	memcpy(mf, mf2, mf_size);
 }
